@@ -1,0 +1,72 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &2733185287105169972
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4493390738978431900}
+  - component: {fileID: 2711358698328308532}
+  m_Layer: 0
+  m_Name: FxController
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &4493390738978431900
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2733185287105169972}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2711358698328308532
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2733185287105169972}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 62c724fdeafbaec4a949795c275ca4ca, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _fx:
+  - type: 0
+    prefab: {fileID: 7193626686412708482, guid: fff87af0b4719df478d617e663a10b07,
+      type: 3}
+    prewarm: 4
+  - type: 1
+    prefab: {fileID: 292201459001401264, guid: bbab2f49e19ac734e96a5edf1811b373, type: 3}
+    prewarm: 5
+  - type: 2
+    prefab: {fileID: 3160889570524372512, guid: 7527e62f14b2e62458caed2600af150b,
+      type: 3}
+    prewarm: 6
+  - type: 3
+    prefab: {fileID: 4693526199486045014, guid: c21ee7157dd79d04bab0fbca349de4ed,
+      type: 3}
+    prewarm: 2
+  - type: 4
+    prefab: {fileID: 6443198323522417298, guid: c9ebca1c8943e004286ea2ba943156e5,
+      type: 3}
+    prewarm: 2
+  - type: 5
+    prefab: {fileID: 1969807417912461557, guid: f656802eace68934bb6189089037846b,
+      type: 3}
+    prewarm: 2
+  _metaHiddenMaterial: {fileID: 2100000, guid: 21eda39985ea8164d8cf440abd7b5534, type: 2}
+  _metaHiddenScrollSpeed: {x: -0.1, y: -0.1}

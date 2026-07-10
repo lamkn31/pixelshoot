@@ -1,0 +1,96 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &2452672765657996618
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 3843024622485320741}
+  - component: {fileID: 112770008804132172}
+  m_Layer: 5
+  m_Name: Popupcontrol
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!224 &3843024622485320741
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2452672765657996618}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 1, y: 1}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 0, y: 0}
+  m_Pivot: {x: 0.5, y: 0.5}
+--- !u!114 &112770008804132172
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2452672765657996618}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 170ff9e06645e7d4e925e80f6972e8eb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  popupRoot: {fileID: 3843024622485320741}
+  tapEffectPrefab: {fileID: 60180624818704808, guid: 9d11e43a8fe8c3c4b986bfe5ea56294c,
+    type: 3}
+  tapEffectPoolSize: 5
+  loadingPopupRef:
+    m_AssetGUID: 6b0e58daa3cf2a541b78106983d55adf
+    m_SubObjectName: 
+    m_SubObjectType: 
+    m_EditorAssetChanged: 0
+  settingPopupRef:
+    m_AssetGUID: 0208381af2e392b428279bca220ca05a
+    m_SubObjectName: 
+    m_SubObjectType: 
+    m_EditorAssetChanged: 0
+  winPopupRef:
+    m_AssetGUID: e38fc2a751b67784b90f540bc65a6fe6
+    m_SubObjectName: 
+    m_SubObjectType: 
+    m_EditorAssetChanged: 0
+  losePopupRef:
+    m_AssetGUID: a3828fcbce34bd044abb6d7b9ac1c998
+    m_SubObjectName: 
+    m_SubObjectType: 
+    m_EditorAssetChanged: 0
+  tutorialPopupRef:
+    m_AssetGUID: e52e2db2bdb6eed4b997352d94d6046b
+    m_SubObjectName: 
+    m_SubObjectType: 
+    m_EditorAssetChanged: 0
+  gamePlayPopupRef:
+    m_AssetGUID: c07510716e81a014e8690701d18b5fec
+    m_SubObjectName: 
+    m_SubObjectType: 
+    m_EditorAssetChanged: 0
+  difficultyNotificationRef:
+    m_AssetGUID: 7df65583ffa474341ad9340851d9813d
+    m_SubObjectName: 
+    m_SubObjectType: 
+    m_EditorAssetChanged: 0
+  preloadLoading: 1
+  preloadSetting: 0
+  preloadWin: 1
+  preloadLose: 0
+  preloadTutorial: 0
+  preloadGamePlay: 0
+  preloadDifficultyNotification: 1

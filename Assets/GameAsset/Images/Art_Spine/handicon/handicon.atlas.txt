@@ -1,0 +1,11 @@
+handicon.png
+size:788,788
+filter:Linear,Linear
+arrow
+bounds:0,679,472,106
+hand
+bounds:472,408,313,377
+hand2
+bounds:415,84,322,324
+skeleton2_0
+bounds:0,264,415,415
