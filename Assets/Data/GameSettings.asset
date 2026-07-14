@@ -17,7 +17,7 @@ MonoBehaviour:
   GunSpeed: 3
   GunSpacing: 2
   FireInterval: 0.25
-  GunFireRange: 1
+  GunFireRange: 2
   FrontStationDistance: 0
   BulletSpeed: 14
   BlockStackSpacing: 0.25

@@ -119,15 +119,9 @@ public class RoundedPolylinePath : MonoBehaviour
         if (samples == null || samples.Length == 0) GeneratePath();
         if (samples == null || samples.Length == 0) return Vector3.zero;
 
-        // Xử lý Loop khoảng cách
-        if (isClosed)
-        {
-            distance = Mathf.Repeat(distance, TotalLength);
-        }
-        else
-        {
-            distance = Mathf.Clamp(distance, 0f, TotalLength);
-        }
+        // AUTO LOOP: luôn wrap khoảng cách quanh path, BẤT KỂ isClosed (yêu cầu #1). Gun chạy vòng
+        // vô hạn. Nếu polyline chưa khép kín hình học thì có 1 điểm "nhảy" tại mối nối cuối→đầu.
+        if (TotalLength > 1e-4f) distance = Mathf.Repeat(distance, TotalLength);
 
         // Tìm kiếm nhị phân (Binary Search) trên mảng _sampleArc để tìm phân đoạn chứa khoảng cách này
         int low = 0;

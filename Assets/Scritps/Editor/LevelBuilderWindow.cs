@@ -329,7 +329,7 @@ namespace Wayfu.Lamkn
                 Handles.color = new Color(1f, 0.85f, 0.2f, 0.9f);
                 for (int gi = 0; gi < maxGun; gi++)
                 {
-                    Vector3 ctr = PathPointAt(front - gi * sp);
+                    Vector3 ctr = PathPointAt(front + gi * sp); // khớp index đảo của PathManager
                     Vector2 prev = Proj(ctr + new Vector3(rng, 0, 0));
                     for (int k = 1; k <= 26; k++) { float a = k / 26f * Mathf.PI * 2f; Vector2 s = Proj(ctr + new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)) * rng); Line(prev, s); prev = s; }
                     Vector2 c = Proj(ctr); FillRect(new Rect(c.x - 3, c.y - 3, 6, 6), Color.yellow);
@@ -418,7 +418,7 @@ namespace Wayfu.Lamkn
                     for (int i = 0; i < guns.Count; i++)
                     {
                         var g = guns[i]; if (g == null) continue;
-                        Vector3 wp = basePos + Vector3.forward * spacing * i;
+                        Vector3 wp = basePos - Vector3.forward * spacing * i; // index 0 phía trước (+Z)
                         if (!Front(wp)) continue;
                         Vector2 gp = Proj(wp); float sz = PixSize(wp, 0.6f);
                         FillRect(new Rect(gp.x - sz / 2, gp.y - sz / 2, sz, sz), BlockColorPalette.ToColor(g.Color));

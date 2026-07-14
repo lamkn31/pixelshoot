@@ -20,8 +20,8 @@ namespace Wayfu.Lamkn
         public Gun FrontGun => _guns.Count > 0 ? _guns[0] : null;
         public int Count => _guns.Count;
 
-        /// <summary>Vị trí của gun theo index trong slot — cách nhau dọc trục Z.</summary>
-        private Vector3 SlotPos(int index) => transform.position + Vector3.forward * _spacing * index;
+        /// <summary>Vị trí của gun theo index — index 0 ở PHÍA TRƯỚC (gần path, +Z), index sau lùi về −Z.</summary>
+        private Vector3 SlotPos(int index) => transform.position - Vector3.forward * _spacing * index;
 
         /// <summary>Đặt vị trí slot (dùng cho fallback khi scene chưa có slot).</summary>
         public void SetPosition(Vector3 pos) => transform.position = pos;
@@ -62,7 +62,7 @@ namespace Wayfu.Lamkn
             float sp = _spacing > 0f ? _spacing : GameSettings.SlotSpacing;
             Gizmos.color = new Color(1f, 1f, 1f, 0.5f);
             Gizmos.DrawWireSphere(transform.position, 0.3f);
-            Gizmos.DrawLine(transform.position, transform.position + Vector3.forward * sp); // hướng queue (Z)
+            Gizmos.DrawLine(transform.position, transform.position - Vector3.forward * sp); // hướng queue lùi (−Z)
         }
     }
 }

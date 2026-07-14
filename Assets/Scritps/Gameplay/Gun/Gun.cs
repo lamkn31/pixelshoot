@@ -7,8 +7,8 @@ using UnityEditor;
 namespace Wayfu.Lamkn
 {
     /// <summary>
-    /// Gun: nằm trong slot → click để ra path → chạy loop và tự bắn cell ngoài cùng gần nhất
-    /// cùng màu TRONG TẦM BẮN; hết đạn thì biến mất (yêu cầu #3, #7). Di chuyển do PathManager điều khiển.
+    /// Gun: nằm trong slot → click để ra path → chạy loop liên tục (RoundedPolylineFollower) và tự bắn
+    /// cell ngoài cùng gần nhất cùng màu TRONG TẦM BẮN; hết đạn thì biến mất (yêu cầu #3, #7).
     /// </summary>
     public class Gun : MonoBehaviour, IItemPool<Gun>
     {
@@ -21,9 +21,6 @@ namespace Wayfu.Lamkn
         /// <summary>Khoảng cách tích luỹ trên path (PathManager ghi/đọc).</summary>
         public float Distance;
         public bool IsOnPath => _state == GunState.OnPath;
-
-        /// <summary>Đang animate từ slot lên path — PathManager tạm không điều khiển vị trí.</summary>
-        public bool IsEntering { get; private set; }
 
         private GunState _state = GunState.InSlot;
         private float _fireInterval = 0.25f;
@@ -40,10 +37,18 @@ namespace Wayfu.Lamkn
 
         private void Awake()
         {
-            // Gun tự di chuyển qua PathManager (station). Tắt follower cũ nếu prefab còn dính,
-            // nếu không nó sẽ TỰ chạy path ngay khi init.
+            // Tắt follower khi ở slot; PathManager bật lại (DeployOnPath) khi gun được click lên path.
             var follower = GetComponentInChildren<RoundedPolylineFollower>(true);
             if (follower != null) follower.enabled = false;
+
+            // Collider của prefab thường nằm ở CHILD (vd "Model") → OnMouseDown gửi tới child, không tới
+            // script Gun ở root. Gắn relay lên mọi collider để forward click về đây (yêu cầu click→deploy).
+            foreach (var col in GetComponentsInChildren<Collider>(true))
+            {
+                var relay = col.GetComponent<GunClickRelay>();
+                if (relay == null) relay = col.gameObject.AddComponent<GunClickRelay>();
+                relay.Owner = this;
+            }
         }
 
         public void Init(GunData data, float fireInterval, float fireRange, float bulletSpeed)
@@ -56,7 +61,6 @@ namespace Wayfu.Lamkn
             // Reset trạng thái (item pooled có thể tái dùng).
             _fireTimer = 0f;
             _currentTarget = null;
-            IsEntering = false;
             if (_moveRoutine != null) { StopCoroutine(_moveRoutine); _moveRoutine = null; }
 
             _renderer = GetComponentInChildren<Renderer>();
@@ -65,14 +69,21 @@ namespace Wayfu.Lamkn
             EnsureLabel();
             UpdateLabel();
             _state = GunState.InSlot;
+
+            // Item pooled tái dùng: tắt follower để gun đứng yên trong slot (bật lại khi deploy).
+            var follower = GetComponentInChildren<RoundedPolylineFollower>(true);
+            if (follower != null) follower.enabled = false;
         }
 
         public void SetSlot(GunSlot s) => Slot = s;
 
-        private void OnMouseDown()
+        // Được gọi từ GunClickRelay (collider ở child) hoặc trực tiếp nếu collider nằm cùng GO.
+        public void HandleClick()
         {
             if (_state == GunState.InSlot) SlotManager.Instance?.OnGunClicked(this);
         }
+
+        private void OnMouseDown() => HandleClick();
 
         public void OnDeployed()
         {
@@ -82,33 +93,17 @@ namespace Wayfu.Lamkn
             _fireTimer = 0f;
         }
 
-        /// <summary>Bắt đầu animate gun từ vị trí slot lên điểm vào path, xong mới cho PathManager điều khiển.</summary>
-        public void BeginEntry(Vector3 target, float duration)
+        /// <summary>Bật RoundedPolylineFollower cho gun chạy vòng path liên tục từ startDistance (yêu cầu #3).</summary>
+        public void DeployOnPath(RoundedPolylinePath path, float startDistance, float speed)
         {
-            IsEntering = true;
-            if (_moveRoutine != null) StopCoroutine(_moveRoutine);
-            if (!gameObject.activeInHierarchy || duration <= 0f) { transform.position = target; IsEntering = false; return; }
-            _moveRoutine = StartCoroutine(EntryRoutine(target, duration));
-        }
-
-        private IEnumerator EntryRoutine(Vector3 target, float dur)
-        {
-            Vector3 start = transform.position;
-            float t = 0f;
-            while (t < dur)
-            {
-                t += Time.deltaTime;
-                transform.position = Vector3.Lerp(start, target, t / dur);
-                yield return null;
-            }
-            transform.position = target;
-            IsEntering = false;
-            _moveRoutine = null;
+            var follower = GetComponentInChildren<RoundedPolylineFollower>(true);
+            if (follower != null) { follower.Init(path, startDistance, speed); follower.enabled = true; }
+            else if (path != null) transform.position = path.GetPointAtDistance(startDistance); // gun ko có follower
         }
 
         private void Update()
         {
-            if (_state != GunState.OnPath || IsEntering) return;
+            if (_state != GunState.OnPath) return;
 
             // Luôn cập nhật target gần nhất cùng màu (để vẽ gizmo & quyết định bắn).
             _currentTarget = GridBlockManager.Instance?.FindTargetCell(Data.Color, transform.position);
@@ -124,7 +119,9 @@ namespace Wayfu.Lamkn
 
         private bool InRange(BlockCell cell)
         {
-            return (cell.transform.position - transform.position).sqrMagnitude <= _fireRange * _fireRange;
+            // Range là hình TRÒN trên sàn XZ — bỏ qua chênh lệch Y (block xếp chồng theo Y).
+            Vector3 d = cell.transform.position - transform.position; d.y = 0f;
+            return d.sqrMagnitude <= _fireRange * _fireRange;
         }
 
         private void Fire(BlockCell cell)
@@ -218,5 +215,15 @@ namespace Wayfu.Lamkn
             }
         }
 #endif
+    }
+
+    /// <summary>
+    /// Gắn lên GameObject có Collider (thường là child "Model" của gun) để forward OnMouseDown về
+    /// <see cref="Gun"/> ở root — vì OnMouseDown chỉ gọi trên GO chứa collider, không lan lên parent.
+    /// </summary>
+    public class GunClickRelay : MonoBehaviour
+    {
+        public Gun Owner;
+        private void OnMouseDown() { if (Owner != null) Owner.HandleClick(); }
     }
 }

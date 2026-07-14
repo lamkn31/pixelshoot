@@ -12,6 +12,15 @@ public class RoundedPolylineFollower : MonoBehaviour
 
     private float currentDistance = 0f; // Khoảng cách vật thể đã đi được trên đường
 
+    /// <summary>Gắn path + vị trí bắt đầu + tốc độ (gọi khi gun được deploy lên path).</summary>
+    public void Init(RoundedPolylinePath path, float startDistance, float speed)
+    {
+        targetPath = path;
+        currentDistance = startDistance;
+        moveSpeed = speed;
+        if (targetPath != null) transform.position = targetPath.GetPointAtDistance(currentDistance);
+    }
+
     private void Start()
     {
         if (targetPath == null)
@@ -41,16 +50,12 @@ public class RoundedPolylineFollower : MonoBehaviour
         Vector3 newPosition = targetPath.GetPointAtDistance(currentDistance);
         transform.position = newPosition;
 
-        // Tính hướng đi tiếp theo (nhìn trước 0.05 mét) để xoay mặt gạch/lỗ theo đường ray
+        // Tính hướng đi tiếp theo (nhìn trước 0.05 mét) để xoay mặt theo đường ray — trên SÀN XZ.
         Vector3 lookAheadPos = targetPath.GetPointAtDistance(currentDistance + 0.05f);
-        Vector3 direction = (lookAheadPos - transform.position).normalized;
-
-        if (direction != Vector3.zero)
-        {
-            // Thiết lập góc quay phù hợp cho không gian 2D (Trục Z phẳng)
-            float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
-            transform.rotation = Quaternion.AngleAxis(angle, Vector3.forward);
-        }
+        Vector3 direction = lookAheadPos - transform.position;
+        direction.y = 0f;
+        if (direction.sqrMagnitude > 1e-6f)
+            transform.rotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
     }
 }
 }

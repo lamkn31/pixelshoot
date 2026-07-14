@@ -93,6 +93,7 @@ namespace Wayfu.Lamkn
             _everHadBlocks = false;
         }
 
+        // Front = ring ROW 0 = "ngoài cùng gần path" (theo thiết kế). Gun ăn từ ngoài (sát path) vào trong grid.
         private static Ring FrontRing(GridRuntime gr)
         {
             foreach (var ring in gr.Rings) if (ring.Cells.Count > 0) return ring;
@@ -148,7 +149,8 @@ namespace Wayfu.Lamkn
             GameController.Instance?.OnBoardChanged();
         }
 
-        // Bỏ các ring rỗng ở đầu và dồn các ring còn lại vào trong (giảm 1 bậc bán kính).
+        // Ring front (row 0, sát path) bị phá hết → bỏ nó, DỒN các ring còn lại VÀO TRONG (giảm bán kính,
+        // tiến về phía path/gun), rồi refill ở phía TRONG grid. Gun ăn từ ngoài (path) vào trong.
         private void CollapseFront(GridRuntime gr)
         {
             bool changed = false;
@@ -170,8 +172,8 @@ namespace Wayfu.Lamkn
             TryRefill(gr);
         }
 
-        // Spawner nhả bù (~ TrySpawnBlocks/PendingBlockDataArr của PixelShoot_2): sau khi front dồn vào,
-        // dựng thêm ring ở NGOÀI CÙNG từ hàng đợi, giữ số ring ~ TargetRows để tạo cảm giác băng chuyền.
+        // Spawner nhả bù: sau khi front (row 0) bị ăn và các ring dồn vào trong, dựng thêm ring ở phía
+        // TRONG (row lớn) từ hàng đợi, giữ số ring ~ TargetRows (băng chuyền đẩy dần ra phía path).
         private void TryRefill(GridRuntime gr)
         {
             if (gr.Pending == null) return;
@@ -197,7 +199,7 @@ namespace Wayfu.Lamkn
                     };
 
                     Vector3 pos = gr.Data.CellPosAt(rowIndex, e, take);
-                    // Spawn hơi lệch ra ngoài theo phương bán kính rồi trượt vào cho mượt (feed).
+                    // Spawn hơi lệch ra ngoài (bán kính lớn hơn) rồi trượt vào cho mượt (feed).
                     Vector3 radial = pos - gr.Data.Center;
                     Vector3 dir = radial.sqrMagnitude > 1e-6f ? radial.normalized : Vector3.forward;
                     Vector3 spawnPos = gr.Data.Center + dir * (radial.magnitude + gr.Data.RowSpacing);
@@ -211,7 +213,7 @@ namespace Wayfu.Lamkn
                 }
 
                 if (ring.Cells.Count == 0) break;
-                gr.Rings.Add(ring);
+                gr.Rings.Add(ring); // ring mới ở phía TRONG (cuối list)
             }
         }
 
