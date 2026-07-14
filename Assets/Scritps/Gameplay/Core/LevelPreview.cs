@@ -69,6 +69,9 @@ namespace Wayfu.Lamkn
                             int stack = Mathf.Max(1, cell.BlockStackCt);
                             for (int j = 0; j < stack; j++)
                                 Gizmos.DrawWireCube(pos + Vector3.up * stackSpacing * j, Vector3.one * 0.45f);
+                            // Hướng (rotate) của cell.
+                            Gizmos.color = Color.white;
+                            Gizmos.DrawLine(pos, pos + cell.DirectionVector * 0.55f);
                         }
                     }
                 }

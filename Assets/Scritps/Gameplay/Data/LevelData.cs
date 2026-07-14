@@ -26,9 +26,9 @@ namespace Wayfu.Lamkn
         [Header("Slots (số hàng gun + thứ tự gun ra)")]
         public List<SlotData> Slots = new List<SlotData>();
 
-        [Header("Holes grid (~ HolesGridSize / HoleCapacity)")]
-        public Vector2Int HolesGridSize;
-        public int HoleCapacity;
+        [Header("Hole capacity (số block xếp chồng mỗi cell)")]
+        [Tooltip("Số block stack mỗi cell khi Generate Cells (stack = HoleCapacity).")]
+        [Min(1)] public int HoleCapacity = 3;
 
         [Header("Grids block (mỗi grid định hình bằng 4 góc; nhiều grid / level)")]
         public List<BlockGridData> Grids = new List<BlockGridData>();
@@ -71,13 +71,22 @@ namespace Wayfu.Lamkn
             var d = new Dictionary<BlockColor, int>();
             foreach (var grid in Grids)
             {
-                if (grid?.Cells == null) continue;
-                foreach (var c in grid.Cells)
-                {
-                    if (c == null || c.BlockStackCt <= 0) continue;
-                    d.TryGetValue(c.Color, out var v);
-                    d[c.Color] = v + c.BlockStackCt;
-                }
+                if (grid == null) continue;
+                if (grid.Cells != null)
+                    foreach (var c in grid.Cells)
+                    {
+                        if (c == null || c.BlockStackCt <= 0) continue;
+                        d.TryGetValue(c.Color, out var v);
+                        d[c.Color] = v + c.BlockStackCt;
+                    }
+                // Block trong hàng đợi refill của spawner cũng cần khớp bullet.
+                if (grid.PendingRefill != null)
+                    foreach (var p in grid.PendingRefill)
+                    {
+                        if (p == null || p.BlockStackCt <= 0) continue;
+                        d.TryGetValue(p.Color, out var v);
+                        d[p.Color] = v + p.BlockStackCt;
+                    }
             }
             return d;
         }

@@ -39,7 +39,21 @@ namespace Wayfu.Lamkn
         [Tooltip("Cell theo thứ tự (row, element). Chỉ dùng Color + BlockStackCt.")]
         public List<BlockCellData> Cells = new List<BlockCellData>();
 
+        [Tooltip("Hàng đợi SPAWNER nhả thêm (~ PendingBlockDataArr của PixelShoot_2). Mỗi lần ring front " +
+                 "bị thu hết → collapse, spawner dựng 1 ring mới ở NGOÀI CÙNG lấy lần lượt các mục này.")]
+        public List<PendingBlockData> PendingRefill = new List<PendingBlockData>();
+
         private const int SampleCount = 48;
+
+        /// <summary>Tổng số block đang chờ trong hàng đợi refill (∑BlockStackCt).</summary>
+        public int PendingBlockTotal()
+        {
+            int t = 0;
+            if (PendingRefill != null)
+                foreach (var p in PendingRefill)
+                    if (p != null && p.BlockStackCt > 0) t += p.BlockStackCt;
+            return t;
+        }
 
         // Vị trí tâm-hàng theo s (0..1) dọc sweep — có xoắn ốc.
         private Vector3 PosAlong(int row, float s)
@@ -116,6 +130,17 @@ namespace Wayfu.Lamkn
             int idx = CellIndex(row, e);
             return (Cells != null && idx >= 0 && idx < Cells.Count) ? Cells[idx] : null;
         }
+    }
+
+    /// <summary>
+    /// 1 mục trong hàng đợi refill của spawner (~ PendingBlockData của PixelShoot_2): màu + số block xếp chồng.
+    /// Khi ring front bị thu hết, spawner lấy lần lượt các mục này để dựng cell mới ở ring ngoài cùng.
+    /// </summary>
+    [Serializable]
+    public class PendingBlockData
+    {
+        public BlockColor Color;
+        [Min(1)] public int BlockStackCt = 3;
     }
 
     /// <summary>Data 1 gun: màu + số đạn (yêu cầu #7).</summary>

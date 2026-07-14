@@ -13,7 +13,15 @@ namespace Wayfu.Lamkn
         [SerializeField] private float collapseDuration = 0.25f;
 
         private class Ring { public readonly List<BlockCell> Cells = new List<BlockCell>(); }
-        private class GridRuntime { public BlockGridData Data; public readonly List<Ring> Rings = new List<Ring>(); }
+        private class GridRuntime
+        {
+            public BlockGridData Data;
+            public readonly List<Ring> Rings = new List<Ring>();
+            public Transform Root;                 // node cha để gắn cell (kể cả cell refill)
+            public Queue<PendingBlockData> Pending; // hàng đợi spawner nhả thêm
+            public float StackSpacing;
+            public int TargetRows;                 // số ring mong muốn — refill giữ ~ mức này
+        }
 
         private readonly List<GridRuntime> _grids = new List<GridRuntime>();
         private bool _everHadBlocks;
@@ -26,9 +34,17 @@ namespace Wayfu.Lamkn
             foreach (var grid in level.Grids)
             {
                 if (grid == null) continue;
-                var gr = new GridRuntime { Data = grid };
                 var gridGo = new GameObject("Grid");
                 gridGo.transform.SetParent(transform);
+
+                var gr = new GridRuntime
+                {
+                    Data = grid,
+                    Root = gridGo.transform,
+                    StackSpacing = stackSpacing,
+                    TargetRows = Mathf.Max(1, grid.Rows),
+                    Pending = BuildPendingQueue(grid),
+                };
 
                 for (int r = 0; r < grid.Rows; r++)
                 {
@@ -39,13 +55,7 @@ namespace Wayfu.Lamkn
                         var cellData = grid.GetCell(r, e);
                         if (cellData == null || cellData.BlockStackCt <= 0) continue; // ô trống
 
-                        Vector3 pos = grid.CellPos(r, e);
-                        var go = new GameObject($"Cell_r{r}_e{e}");
-                        go.transform.SetParent(gridGo.transform);
-                        go.transform.position = pos;
-
-                        var cell = go.AddComponent<BlockCell>();
-                        cell.Build(cellData, stackSpacing, this);
+                        var cell = CreateCell(gr, $"Cell_r{r}_e{e}", grid.CellPos(r, e), cellData);
                         ring.Cells.Add(cell);
                     }
                     gr.Rings.Add(ring);
@@ -54,6 +64,26 @@ namespace Wayfu.Lamkn
             }
 
             _everHadBlocks = RemainingBlocks > 0;
+        }
+
+        private static Queue<PendingBlockData> BuildPendingQueue(BlockGridData grid)
+        {
+            var q = new Queue<PendingBlockData>();
+            if (grid.PendingRefill != null)
+                foreach (var p in grid.PendingRefill)
+                    if (p != null && p.BlockStackCt > 0) q.Enqueue(p);
+            return q;
+        }
+
+        private BlockCell CreateCell(GridRuntime gr, string cellName, Vector3 pos, BlockCellData data)
+        {
+            var go = new GameObject(cellName);
+            go.transform.SetParent(gr.Root);
+            go.transform.position = pos;
+            go.transform.rotation = Quaternion.Euler(0f, data.SpawnerDirectionAngleZ, 0f); // hướng dồn của cell
+            var cell = go.AddComponent<BlockCell>();
+            cell.Build(data, gr.StackSpacing, this);
+            return cell;
         }
 
         public void Clear()
@@ -136,6 +166,53 @@ namespace Wayfu.Lamkn
                 for (int e = 0; e < count; e++)
                     ring.Cells[e].MoveTo(gr.Data.CellPosAt(ri, e, count), collapseDuration);
             }
+
+            TryRefill(gr);
+        }
+
+        // Spawner nhả bù (~ TrySpawnBlocks/PendingBlockDataArr của PixelShoot_2): sau khi front dồn vào,
+        // dựng thêm ring ở NGOÀI CÙNG từ hàng đợi, giữ số ring ~ TargetRows để tạo cảm giác băng chuyền.
+        private void TryRefill(GridRuntime gr)
+        {
+            if (gr.Pending == null) return;
+
+            while (gr.Pending.Count > 0 && gr.Rings.Count < gr.TargetRows)
+            {
+                int rowIndex = gr.Rings.Count;
+                int full = Mathf.Max(1, gr.Data.ElementsInRow(rowIndex));
+                int take = Mathf.Min(full, gr.Pending.Count);
+
+                var ring = new Ring();
+                for (int e = 0; e < take; e++)
+                {
+                    var p = gr.Pending.Dequeue();
+                    if (p == null || p.BlockStackCt <= 0) continue;
+
+                    var data = new BlockCellData
+                    {
+                        Color = p.Color,
+                        BlockStackCt = p.BlockStackCt,
+                        BlockCol = 0,
+                        SpawnerDepth = rowIndex,
+                    };
+
+                    Vector3 pos = gr.Data.CellPosAt(rowIndex, e, take);
+                    // Spawn hơi lệch ra ngoài theo phương bán kính rồi trượt vào cho mượt (feed).
+                    Vector3 radial = pos - gr.Data.Center;
+                    Vector3 dir = radial.sqrMagnitude > 1e-6f ? radial.normalized : Vector3.forward;
+                    Vector3 spawnPos = gr.Data.Center + dir * (radial.magnitude + gr.Data.RowSpacing);
+                    // Hướng cell refill: dồn về TÂM grid (đồng nhất với cell Generate).
+                    data.SpawnerDirectionAngleZ = radial.sqrMagnitude > 1e-6f
+                        ? Mathf.Repeat(Mathf.Atan2(-radial.x, -radial.z) * Mathf.Rad2Deg, 360f) : 0f;
+
+                    var cell = CreateCell(gr, $"Cell_refill_r{rowIndex}_e{e}", spawnPos, data);
+                    cell.MoveTo(pos, collapseDuration);
+                    ring.Cells.Add(cell);
+                }
+
+                if (ring.Cells.Count == 0) break;
+                gr.Rings.Add(ring);
+            }
         }
 
         public int RemainingBlocks
@@ -144,8 +221,14 @@ namespace Wayfu.Lamkn
             {
                 int s = 0;
                 foreach (var gr in _grids)
+                {
                     foreach (var ring in gr.Rings)
                         foreach (var cell in ring.Cells) s += cell.StackCount;
+                    // Block còn trong hàng đợi refill cũng là block "chưa clear" → tính để AllCleared đúng.
+                    if (gr.Pending != null)
+                        foreach (var p in gr.Pending)
+                            if (p != null && p.BlockStackCt > 0) s += p.BlockStackCt;
+                }
                 return s;
             }
         }

@@ -12,12 +12,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 845dd53897d0dda4782a424fe8f33992, type: 3}
   m_Name: GameSettings
   m_EditorClassIdentifier: 
-  SlotGunSpacing: 1
+  SlotGunSpacing: 1.63
   MaxGunOnPath: 5
   GunSpeed: 3
-  GunSpacing: 1.2
+  GunSpacing: 2
   FireInterval: 0.25
   GunFireRange: 1
   FrontStationDistance: 0
   BulletSpeed: 14
-  BlockStackSpacing: 1
+  BlockStackSpacing: 0.25
