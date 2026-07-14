@@ -4,69 +4,152 @@ using UnityEngine;
 namespace Wayfu.Lamkn
 {
     /// <summary>
-    /// Quản lý toàn bộ lane/cột. Cung cấp mục tiêu cho gun (cột ngoài cùng gần nhất cùng màu),
-    /// theo dõi số block còn lại (WIN) và các front-column theo màu (LOSE) — yêu cầu #5.
+    /// Quản lý các grid block dạng vòng cung. Mỗi grid = nhiều RING (hàng cung); gun chỉ bắn được cell
+    /// ở ring NGOÀI CÙNG (front). Khi ring front bị phá hết → các ring phía sau DỒN vào 1 bậc (giảm
+    /// bán kính), tái phân bố vị trí (yêu cầu #5).
     /// </summary>
     public class GridBlockManager : Singleton<GridBlockManager>
     {
-        private readonly List<BlockLane> _lanes = new List<BlockLane>();
+        [SerializeField] private float collapseDuration = 0.25f;
+
+        private class Ring { public readonly List<BlockCell> Cells = new List<BlockCell>(); }
+        private class GridRuntime { public BlockGridData Data; public readonly List<Ring> Rings = new List<Ring>(); }
+
+        private readonly List<GridRuntime> _grids = new List<GridRuntime>();
         private bool _everHadBlocks;
 
         public void Build(LevelData level)
         {
             Clear();
-            foreach (var laneData in level.Lanes)
+            float stackSpacing = GameSettings.Instance != null ? GameSettings.Instance.BlockStackSpacing : 0.5f;
+
+            foreach (var grid in level.Grids)
             {
-                if (laneData == null) continue;
-                var go = new GameObject("Lane");
-                go.transform.SetParent(transform);
-                var lane = go.AddComponent<BlockLane>();
-                lane.Build(laneData, level.BlockPrefab);
-                _lanes.Add(lane);
+                if (grid == null) continue;
+                var gr = new GridRuntime { Data = grid };
+                var gridGo = new GameObject("Grid");
+                gridGo.transform.SetParent(transform);
+
+                for (int r = 0; r < grid.Rows; r++)
+                {
+                    var ring = new Ring();
+                    int count = grid.ElementsInRow(r);
+                    for (int e = 0; e < count; e++)
+                    {
+                        var cellData = grid.GetCell(r, e);
+                        if (cellData == null || cellData.BlockStackCt <= 0) continue; // ô trống
+
+                        Vector3 pos = grid.CellPos(r, e);
+                        var go = new GameObject($"Cell_r{r}_e{e}");
+                        go.transform.SetParent(gridGo.transform);
+                        go.transform.position = pos;
+
+                        var cell = go.AddComponent<BlockCell>();
+                        cell.Build(cellData, stackSpacing, this);
+                        ring.Cells.Add(cell);
+                    }
+                    gr.Rings.Add(ring);
+                }
+                _grids.Add(gr);
             }
-            if (RemainingBlocks > 0) _everHadBlocks = true;
+
+            _everHadBlocks = RemainingBlocks > 0;
         }
 
         public void Clear()
         {
-            foreach (var l in _lanes) if (l != null) Destroy(l.gameObject);
-            _lanes.Clear();
+            for (int i = transform.childCount - 1; i >= 0; i--) Destroy(transform.GetChild(i).gameObject);
+            _grids.Clear();
             _everHadBlocks = false;
         }
 
-        /// <summary>Cột ngoài cùng gần <paramref name="from"/> nhất có màu <paramref name="color"/>.</summary>
-        public BlockColumn FindTargetColumn(BlockColor color, Vector3 from)
+        private static Ring FrontRing(GridRuntime gr)
         {
-            BlockColumn best = null;
+            foreach (var ring in gr.Rings) if (ring.Cells.Count > 0) return ring;
+            return null;
+        }
+
+        /// <summary>Cell cùng màu gần nhất ở ring ngoài cùng của mọi grid.</summary>
+        public BlockCell FindTargetCell(BlockColor color, Vector3 from)
+        {
+            BlockCell best = null;
             float bestSqr = float.MaxValue;
-            foreach (var lane in _lanes)
+            foreach (var gr in _grids)
             {
-                var front = lane.FrontColumn;
-                if (front == null || front.Color != color) continue;
-                float d = (front.transform.position - from).sqrMagnitude;
-                if (d < bestSqr) { bestSqr = d; best = front; }
+                var ring = FrontRing(gr);
+                if (ring == null) continue;
+                foreach (var cell in ring.Cells)
+                {
+                    if (cell == null || cell.Color != color) continue;
+                    float d = (cell.transform.position - from).sqrMagnitude;
+                    if (d < bestSqr) { bestSqr = d; best = cell; }
+                }
             }
             return best;
         }
 
-        /// <summary>Có tồn tại cột ngoài cùng màu này không (dùng cho check LOSE).</summary>
-        public bool HasFrontColumnOfColor(BlockColor color)
+        public bool HasFrontCellOfColor(BlockColor color)
         {
-            foreach (var lane in _lanes)
+            foreach (var gr in _grids)
             {
-                var f = lane.FrontColumn;
-                if (f != null && f.Color == color) return true;
+                var ring = FrontRing(gr);
+                if (ring == null) continue;
+                foreach (var cell in ring.Cells) if (cell != null && cell.Color == color) return true;
             }
             return false;
         }
 
+        public void OnCellCleared(BlockCell cell)
+        {
+            foreach (var gr in _grids)
+            {
+                bool found = false;
+                foreach (var ring in gr.Rings)
+                {
+                    int idx = ring.Cells.IndexOf(cell);
+                    if (idx < 0) continue;
+                    ring.Cells.RemoveAt(idx);
+                    if (cell != null) Destroy(cell.gameObject);
+                    found = true;
+                    break;
+                }
+                if (found) { CollapseFront(gr); break; }
+            }
+            GameController.Instance?.OnBoardChanged();
+        }
+
+        // Bỏ các ring rỗng ở đầu và dồn các ring còn lại vào trong (giảm 1 bậc bán kính).
+        private void CollapseFront(GridRuntime gr)
+        {
+            bool changed = false;
+            while (gr.Rings.Count > 0 && gr.Rings[0].Cells.Count == 0)
+            {
+                gr.Rings.RemoveAt(0);
+                changed = true;
+            }
+            if (!changed) return;
+
+            for (int ri = 0; ri < gr.Rings.Count; ri++)
+            {
+                var ring = gr.Rings[ri];
+                int count = ring.Cells.Count;
+                for (int e = 0; e < count; e++)
+                    ring.Cells[e].MoveTo(gr.Data.CellPosAt(ri, e, count), collapseDuration);
+            }
+        }
+
         public int RemainingBlocks
         {
-            get { int s = 0; foreach (var l in _lanes) if (l != null) s += l.TotalBlocks; return s; }
+            get
+            {
+                int s = 0;
+                foreach (var gr in _grids)
+                    foreach (var ring in gr.Rings)
+                        foreach (var cell in ring.Cells) s += cell.StackCount;
+                return s;
+            }
         }
 
         public bool AllCleared => _everHadBlocks && RemainingBlocks == 0;
-
-        public void OnLaneChanged() => GameController.Instance?.OnBoardChanged();
     }
 }

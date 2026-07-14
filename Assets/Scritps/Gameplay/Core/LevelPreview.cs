@@ -3,25 +3,39 @@ using UnityEngine;
 namespace Wayfu.Lamkn
 {
     /// <summary>
-    /// Vẽ gizmo preview của 1 LevelData ngay trong Scene (path loop, các cột theo màu, các gun trong slot).
-    /// Hỗ trợ Level Tool trực quan hoá bố cục (yêu cầu #10). Chỉ chạy trong Editor qua OnDrawGizmos.
+    /// Vẽ gizmo preview của 1 LevelData trong Scene: path loop, các grid block (4 góc + cell), khung camera.
+    /// Chỉ chạy trong Editor qua OnDrawGizmos.
     /// </summary>
     public class LevelPreview : MonoBehaviour
     {
         public LevelData level;
         public bool drawPath = true;
-        public bool drawLanes = true;
-        public bool drawSlots = true;
+        public bool drawBlocks = true;
+        public bool drawCameraFrame = true;
 
         private void OnDrawGizmos()
         {
             if (level == null) return;
 
+            if (drawCameraFrame && level.CameraOrthoSize > 0f)
+            {
+                float halfH = level.CameraOrthoSize;
+                float halfW = level.ScreenAspect.y > 0f ? halfH * level.ScreenAspect.x / level.ScreenAspect.y : halfH;
+                Vector3 c = level.CameraCenter;
+                Gizmos.color = new Color(1f, 0.55f, 0.1f);
+                Vector3 a = c + new Vector3(-halfW, 0f, -halfH);
+                Vector3 b = c + new Vector3(halfW, 0f, -halfH);
+                Vector3 d = c + new Vector3(halfW, 0f, halfH);
+                Vector3 e = c + new Vector3(-halfW, 0f, halfH);
+                Gizmos.DrawLine(a, b); Gizmos.DrawLine(b, d); Gizmos.DrawLine(d, e); Gizmos.DrawLine(e, a);
+            }
+
             if (drawPath && level.PathWaypoints != null && level.PathWaypoints.Count >= 2)
             {
                 Gizmos.color = Color.cyan;
                 int n = level.PathWaypoints.Count;
-                for (int i = 0; i < n; i++)
+                int last = level.IsClosed ? n : n - 1;
+                for (int i = 0; i < last; i++)
                 {
                     Vector3 a = level.PathWaypoints[i];
                     Vector3 b = level.PathWaypoints[(i + 1) % n];
@@ -30,40 +44,36 @@ namespace Wayfu.Lamkn
                 }
             }
 
-            if (drawLanes && level.Lanes != null)
+            if (drawBlocks && level.Grids != null)
             {
-                foreach (var lane in level.Lanes)
+                float stackSpacing = GameSettings.Instance != null ? GameSettings.Instance.BlockStackSpacing : 0.5f;
+                foreach (var grid in level.Grids)
                 {
-                    if (lane?.Columns == null) continue;
-                    Vector3 dir = lane.ColumnDirection.sqrMagnitude > 0.0001f ? lane.ColumnDirection.normalized : Vector3.up;
-                    Vector3 sdir = lane.BlockStackDir.sqrMagnitude > 0.0001f ? lane.BlockStackDir.normalized : Vector3.right;
-                    for (int i = 0; i < lane.Columns.Count; i++)
-                    {
-                        var col = lane.Columns[i];
-                        if (col == null) continue;
-                        Vector3 cpos = lane.FrontPos + dir * lane.ColumnSpacing * i;
-                        Gizmos.color = BlockColorPalette.ToColor(col.Color);
-                        for (int j = 0; j < col.BlockCount; j++)
-                            Gizmos.DrawWireCube(cpos + sdir * lane.BlockSpacing * j, Vector3.one * 0.45f);
-                    }
-                }
-            }
+                    if (grid == null) continue;
 
-            if (drawSlots && level.Slots != null)
-            {
-                foreach (var s in level.Slots)
-                {
-                    if (s?.Guns == null) continue;
-                    Vector3 sdir = s.Direction.sqrMagnitude > 0.0001f ? s.Direction.normalized : Vector3.up;
-                    for (int i = 0; i < s.Guns.Count; i++)
+                    // Viền vòng cung: 2 cạnh bên + cung trong/ngoài.
+                    Gizmos.color = new Color(0.6f, 0.6f, 0.6f);
+                    int last = Mathf.Max(0, grid.Rows - 1);
+                    Gizmos.DrawLine(grid.CellPos(0, 0), grid.CellPos(last, grid.ElementsInRow(last) - 1));       // cạnh phải
+                    Gizmos.DrawLine(grid.CellPos(0, grid.ElementsInRow(0) - 1), grid.CellPos(last, 0));         // cạnh trái
+
+                    for (int r = 0; r < grid.Rows; r++)
                     {
-                        var g = s.Guns[i];
-                        if (g == null) continue;
-                        Gizmos.color = BlockColorPalette.ToColor(g.Color);
-                        Gizmos.DrawWireSphere(s.Position + sdir * s.Spacing * i, 0.3f);
+                        int count = grid.ElementsInRow(r);
+                        for (int e = 0; e < count; e++)
+                        {
+                            var cell = grid.GetCell(r, e);
+                            if (cell == null || cell.BlockStackCt <= 0) continue;
+                            Vector3 pos = grid.CellPos(r, e);
+                            Gizmos.color = BlockColorPalette.ToColor(cell.Color);
+                            int stack = Mathf.Max(1, cell.BlockStackCt);
+                            for (int j = 0; j < stack; j++)
+                                Gizmos.DrawWireCube(pos + Vector3.up * stackSpacing * j, Vector3.one * 0.45f);
+                        }
                     }
                 }
             }
+            // Slot vẽ bởi chính GunSlot trên scene.
         }
     }
 }

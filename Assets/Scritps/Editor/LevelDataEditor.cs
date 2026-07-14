@@ -17,7 +17,10 @@ namespace Wayfu.Lamkn
             var level = (LevelData)target;
 
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Level Tool — Validate", EditorStyles.boldLabel);
+            if (GUILayout.Button("Open Level Tool")) LevelBuilderWindow.Open();
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Validate", EditorStyles.boldLabel);
 
             bool okNow = level.ValidateColorBalance(out string rep);
             EditorGUILayout.HelpBox(rep, okNow ? MessageType.Info : MessageType.Warning);

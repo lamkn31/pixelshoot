@@ -228,7 +228,7 @@ Editor tool (đặt trong `Assets/.../Editor`, namespace `Wayfu.Lamkn`) để th
 | GameplayFactory / LevelPreview | ✅ `Gameplay/Core/` | `Wayfu.Lamkn` |
 | LevelDataEditor (Level Tool) | ✅ `Editor/` | `Wayfu.Lamkn` |
 
-> **Kiến trúc lane**: doc ban đầu mô tả `BlockColumn` trực tiếp trong `GridBlockManager`; bản hiện thực chèn thêm 1 tầng `BlockLane` (làn) — mỗi lane là 1 hàng cột có hướng dồn riêng, khớp yêu cầu "các cột sẽ có hướng". Gun chỉ bắn được `FrontColumn` (cột ngoài cùng) của mỗi lane.
+> **Kiến trúc block (per-cell, bám sát PixelShoot_2)**: block được mô tả bằng `BlockCellData` (per-cell) như schema gốc — mỗi cell có `CellPos`, `BlockCol` (nhóm cột), `SpawnerDepth` (0 = ngoài cùng), `BlockStackCt` (số block trong cell), `SpawnerDirectionAngleZ` (hướng). Runtime `GridBlockManager` gom cell theo `BlockCol` thành cột; `BlockCell` (thay cho `BlockColumn`/`BlockLane` cũ) là 1 stack co lại theo mỗi phát bắn; cell `SpawnerDepth` thấp nhất = front, gun chỉ bắn được front. `LevelData` còn chứa metadata (`CurGameDifficulty`, `HolesGridSize`, `HoleCapacity`, `NumberOfColors`, `MechanicNames`), `BoardProps` và `Obstacles`.
 
 ---
 

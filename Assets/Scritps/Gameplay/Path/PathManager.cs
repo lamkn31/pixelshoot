@@ -4,85 +4,84 @@ using UnityEngine;
 namespace Wayfu.Lamkn
 {
     /// <summary>
-    /// Quản lý các gun đang chạy trên path loop (yêu cầu #4): giữ tối đa MaxGunOnPath,
-    /// đảm bảo khoảng cách đều, và DỒN gun phía sau lên khi 1 gun biến mất.
-    /// Gun đầu (index 0) chạy tự do; các gun sau bám theo với hệ số catch-up để khép khoảng trống.
+    /// Quản lý các gun trên path loop (yêu cầu #4). Gun KHÔNG chạy loop liên tục: mỗi gun tiến tới 1
+    /// "station" cố định trên path rồi DỪNG để bắn. Tối đa MaxGunOnPath station. Khi 1 gun rời đi
+    /// (hết đạn), các gun phía sau DỒN lên 1 station. Thua khi đủ gun mà không gun nào bắn được.
     /// </summary>
     public class PathManager : Singleton<PathManager>
     {
-        [SerializeField] private float catchUpFactor = 1.4f;
+        [SerializeField] private float transitionDuration = 0.3f;
 
         private RoundedPolylinePath _path;
-        private readonly List<Gun> _guns = new List<Gun>();
-        private float _gunSpeed = 3f;
+        private readonly List<Gun> _guns = new List<Gun>();   // [0] = station trước nhất
         private float _gunSpacing = 1.2f;
+        private float _frontStationDistance;
         private int _maxGunOnPath = 5;
 
         public bool IsFull => _guns.Count >= _maxGunOnPath;
         public bool CanAccept => _guns.Count < _maxGunOnPath;
         public int GunCount => _guns.Count;
 
-        public void Init(RoundedPolylinePath path, LevelData level)
+        public void Init(RoundedPolylinePath path)
         {
             _path = path;
-            _gunSpeed = level.GunSpeed;
-            _gunSpacing = level.GunSpacing;
-            _maxGunOnPath = level.MaxGunOnPath;
+            var gs = GameSettings.Instance;
+            _gunSpacing = gs != null ? gs.GunSpacing : 1.2f;
+            _maxGunOnPath = gs != null ? gs.MaxGunOnPath : 5;
+            _frontStationDistance = gs != null ? gs.FrontStationDistance : 0f;
             _guns.Clear();
         }
+
+        /// <summary>Arc-length của station thứ index (0 = trước nhất).</summary>
+        private float StationDistance(int index) => _frontStationDistance - index * _gunSpacing;
 
         public void AddGun(Gun gun)
         {
-            gun.Distance = _guns.Count == 0 ? 0f : _guns[_guns.Count - 1].Distance - _gunSpacing;
+            int index = _guns.Count;
             _guns.Add(gun);
+            SendToStation(gun, index); // animate từ slot lên station, rồi dừng
         }
 
-        public void RemoveGun(Gun gun) => _guns.Remove(gun);
+        public void RemoveGun(Gun gun)
+        {
+            int idx = _guns.IndexOf(gun);
+            if (idx < 0) return;
+            _guns.RemoveAt(idx);
+            // Dồn các gun phía sau tiến lên 1 station.
+            for (int i = idx; i < _guns.Count; i++) SendToStation(_guns[i], i);
+        }
 
         public void Clear()
         {
-            foreach (var g in _guns) if (g != null) Destroy(g.gameObject);
-            _guns.Clear();
+            _guns.Clear(); // gun trả về pool qua PoolManager.ReturnAll khi rebuild
             if (_path != null) { Destroy(_path.gameObject); _path = null; }
         }
 
-        /// <summary>Có gun nào trên path còn cột cùng màu để bắn không (check LOSE).</summary>
+        /// <summary>Có gun nào trên path còn cell cùng màu để bắn không (check LOSE).</summary>
         public bool AnyGunHasTarget()
         {
             if (GridBlockManager.Instance == null) return false;
             foreach (var g in _guns)
-                if (GridBlockManager.Instance.HasFrontColumnOfColor(g.Color)) return true;
+                if (GridBlockManager.Instance.HasFrontCellOfColor(g.Color)) return true;
             return false;
         }
 
-        private void Update()
+        private void SendToStation(Gun gun, int index)
         {
-            if (_path == null || _guns.Count == 0) return;
-
-            float step = _gunSpeed * Time.deltaTime;
-            _guns[0].Distance += step; // gun đầu chạy tự do
-
-            for (int i = 1; i < _guns.Count; i++)
-            {
-                float target = _guns[i - 1].Distance - _gunSpacing;
-                _guns[i].Distance = Mathf.MoveTowards(_guns[i].Distance, target, step * catchUpFactor);
-            }
-
-            for (int i = 0; i < _guns.Count; i++) ApplyPose(_guns[i]);
+            if (_path == null) return;
+            gun.Distance = StationDistance(index);
+            Vector3 pos = _path.GetPointAtDistance(gun.Distance);
+            gun.transform.rotation = FacingAt(gun.Distance);
+            gun.BeginEntry(pos, transitionDuration); // trượt lên station rồi dừng
         }
 
-        private void ApplyPose(Gun g)
+        private Quaternion FacingAt(float distance)
         {
-            Vector3 pos = _path.GetPointAtDistance(g.Distance);
-            g.transform.position = pos;
-
-            Vector3 ahead = _path.GetPointAtDistance(g.Distance + 0.05f);
+            Vector3 pos = _path.GetPointAtDistance(distance);
+            Vector3 ahead = _path.GetPointAtDistance(distance + 0.05f);
             Vector3 dir = (ahead - pos).normalized;
-            if (dir != Vector3.zero)
-            {
-                float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
-                g.transform.rotation = Quaternion.AngleAxis(angle, Vector3.forward);
-            }
+            if (dir == Vector3.zero) return Quaternion.identity;
+            return Quaternion.LookRotation(dir, Vector3.up); // hướng path trên sàn ngang
         }
     }
 }

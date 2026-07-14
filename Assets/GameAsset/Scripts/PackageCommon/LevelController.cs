@@ -29,26 +29,46 @@ namespace Wayfu.Lamkn
             }
 
             EnsureManagers();
+            PoolManager.Instance.Init(levelData); // set prefab + trả hết item cũ về pool
             ClearAll();
 
             var path = BuildPath(levelData);
-            PathManager.Instance.Init(path, levelData);
+            PathManager.Instance.Init(path);
             GridBlockManager.Instance.Build(levelData);
             SlotManager.Instance.Build(levelData);
+            SpawnBoardProps(levelData);
             GameController.Instance.StartLevel();
         }
 
         public void Retry() => Build();
+
+        private Transform _propsRoot;
 
         private void ClearAll()
         {
             PathManager.Instance?.Clear();
             GridBlockManager.Instance?.Clear();
             SlotManager.Instance?.Clear();
+            if (_propsRoot != null) Destroy(_propsRoot.gameObject);
+        }
+
+        private void SpawnBoardProps(LevelData level)
+        {
+            if (level.BoardProps == null || level.BoardProps.Count == 0) return;
+            _propsRoot = new GameObject("BoardProps").transform;
+            foreach (var p in level.BoardProps)
+            {
+                if (p?.PropPrefab == null) continue;
+                var rot = p.PropRot.Equals(default(Quaternion)) ? Quaternion.identity : p.PropRot;
+                var scale = p.PropScale == Vector3.zero ? Vector3.one : p.PropScale;
+                var go = Instantiate(p.PropPrefab, p.PropPos, rot, _propsRoot);
+                go.transform.localScale = scale;
+            }
         }
 
         private void EnsureManagers()
         {
+            Ensure<PoolManager>();
             Ensure<GameController>();
             Ensure<GridBlockManager>();
             Ensure<SlotManager>();
@@ -65,7 +85,7 @@ namespace Wayfu.Lamkn
         {
             var go = new GameObject("GunPath");
             var path = go.AddComponent<RoundedPolylinePath>();
-            path.isClosed = true;
+            path.isClosed = level.IsClosed;
             path.cornerRadius = level.CornerRadius;
             path.waypoints = new List<Transform>();
 

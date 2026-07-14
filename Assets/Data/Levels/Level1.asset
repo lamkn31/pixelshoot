@@ -1,0 +1,136 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 21b4429a5846abd4b99ca05c60e3832b, type: 3}
+  m_Name: Level1
+  m_EditorClassIdentifier: 
+  CurGameDifficulty: 0
+  SkipLevelLoop: 0
+  NumberOfColors: 3
+  MechanicNames: []
+  PathWaypoints:
+  - {x: 1.0219231, y: 0, z: -4.337118}
+  - {x: -2.9843678, y: 0, z: -5.4344635}
+  - {x: -1.872216, y: 0, z: -12.421835}
+  - {x: 0.96694064, y: 0, z: -12.359951}
+  IsClosed: 0
+  CornerRadius: 1
+  Slots:
+  - Guns:
+    - Color: 2
+      CountBullet: 5
+    - Color: 1
+      CountBullet: 5
+  - Guns:
+    - Color: 1
+      CountBullet: 10
+    - Color: 0
+      CountBullet: 21
+  HolesGridSize: {x: 0, y: 0}
+  HoleCapacity: 0
+  Grids:
+  - Center: {x: -0.16141678, y: 0, z: -15.576337}
+    BaseRadius: 0.5100586
+    RowSpacing: 0.2
+    Rows: 3
+    ArcAngle: 331.84164
+    SpiralGrowth: 0
+    BlockWidth: 0.8
+    Spacing: 0.2
+    Cells:
+    - Color: 0
+      CellPos: {x: 0, y: 0, z: 0}
+      CellScale: {x: 1, y: 1, z: 1}
+      BlockCol: 0
+      SpawnerDepth: 0
+      BlockStackCt: 1
+      SpawnerDirectionAngleZ: 0
+    - Color: 0
+      CellPos: {x: 0, y: 0, z: 0}
+      CellScale: {x: 1, y: 1, z: 1}
+      BlockCol: 0
+      SpawnerDepth: 0
+      BlockStackCt: 1
+      SpawnerDirectionAngleZ: 0
+    - Color: 0
+      CellPos: {x: 0, y: 0, z: 0}
+      CellScale: {x: 1, y: 1, z: 1}
+      BlockCol: 0
+      SpawnerDepth: 0
+      BlockStackCt: 1
+      SpawnerDirectionAngleZ: 0
+    - Color: 0
+      CellPos: {x: 0, y: 0, z: 0}
+      CellScale: {x: 1, y: 1, z: 1}
+      BlockCol: 0
+      SpawnerDepth: 0
+      BlockStackCt: 1
+      SpawnerDirectionAngleZ: 0
+    - Color: 0
+      CellPos: {x: 0, y: 0, z: 0}
+      CellScale: {x: 1, y: 1, z: 1}
+      BlockCol: 0
+      SpawnerDepth: 0
+      BlockStackCt: 1
+      SpawnerDirectionAngleZ: 0
+    - Color: 0
+      CellPos: {x: 0, y: 0, z: 0}
+      CellScale: {x: 1, y: 1, z: 1}
+      BlockCol: 0
+      SpawnerDepth: 0
+      BlockStackCt: 1
+      SpawnerDirectionAngleZ: 0
+    - Color: 0
+      CellPos: {x: 0, y: 0, z: 0}
+      CellScale: {x: 1, y: 1, z: 1}
+      BlockCol: 0
+      SpawnerDepth: 0
+      BlockStackCt: 1
+      SpawnerDirectionAngleZ: 0
+    - Color: 0
+      CellPos: {x: 0, y: 0, z: 0}
+      CellScale: {x: 1, y: 1, z: 1}
+      BlockCol: 0
+      SpawnerDepth: 0
+      BlockStackCt: 1
+      SpawnerDirectionAngleZ: 0
+    - Color: 0
+      CellPos: {x: 0, y: 0, z: 0}
+      CellScale: {x: 1, y: 1, z: 1}
+      BlockCol: 0
+      SpawnerDepth: 0
+      BlockStackCt: 1
+      SpawnerDirectionAngleZ: 0
+    - Color: 0
+      CellPos: {x: 0, y: 0, z: 0}
+      CellScale: {x: 1, y: 1, z: 1}
+      BlockCol: 0
+      SpawnerDepth: 0
+      BlockStackCt: 1
+      SpawnerDirectionAngleZ: 0
+    - Color: 0
+      CellPos: {x: 0, y: 0, z: 0}
+      CellScale: {x: 1, y: 1, z: 1}
+      BlockCol: 0
+      SpawnerDepth: 0
+      BlockStackCt: 1
+      SpawnerDirectionAngleZ: 0
+  CameraOrthoSize: 9
+  ScreenAspect: {x: 0.5625, y: 1}
+  CameraCenter: {x: 0, y: 0, z: -1.67}
+  BoardProps: []
+  Obstacles: []
+  GunPrefab: {fileID: 4381884401341601119, guid: 5ff6f81c101e5b7409ffcc5ed0cdbb4e,
+    type: 3}
+  BlockPrefab: {fileID: 2600362813160992447, guid: 4f4ac19ec974dab49827e22a836906fe,
+    type: 3}
+  BulletPrefab: {fileID: 449217891494468369, guid: 6e086e14390a44746a8deba30a25b92b,
+    type: 3}

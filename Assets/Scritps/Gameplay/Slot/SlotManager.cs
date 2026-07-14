@@ -4,45 +4,96 @@ using UnityEngine;
 namespace Wayfu.Lamkn
 {
     /// <summary>
-    /// Quản lý các slot (số hàng gun mỗi level + thứ tự gun ra). Nhận click từ gun và
-    /// đẩy gun đầu slot sang PathManager nếu path chưa đầy (yêu cầu #6).
+    /// Quản lý slot gun. Ưu tiên dùng các slot ĐẶT SẴN TRÊN SCENE (gán vào <see cref="sceneSlots"/>
+    /// hoặc tự tìm trong scene, sắp theo SlotIndex). Level điền danh sách gun cho từng slot;
+    /// số slot có gun = số slot được active, các slot dư bị tắt (yêu cầu #6, #4).
+    /// Nếu scene không có slot nào → fallback tự tạo 1 hàng slot mặc định.
     /// </summary>
     public class SlotManager : Singleton<SlotManager>
     {
-        private readonly List<GunSlot> _slots = new List<GunSlot>();
+        [Tooltip("Các slot đặt sẵn trên scene (Slot0..4). Bỏ trống sẽ tự tìm GunSlot trong scene.")]
+        [SerializeField] private List<GunSlot> sceneSlots = new List<GunSlot>();
+
+        private readonly List<GunSlot> _activeSlots = new List<GunSlot>();
+        private readonly List<GameObject> _fallbackCreated = new List<GameObject>();
 
         public void Build(LevelData level)
         {
             Clear();
-            foreach (var slotData in level.Slots)
+            var gs = GameSettings.Instance;
+            float spacing = gs != null ? gs.SlotGunSpacing : 1f;   // config chung
+            float fireInterval = gs != null ? gs.FireInterval : 0.25f;
+            float fireRange = gs != null ? gs.GunFireRange : 3f;
+            float bulletSpeed = gs != null ? gs.BulletSpeed : 14f;
+
+            var slots = ResolveSceneSlots();
+            if (slots.Count > 0)
             {
-                if (slotData == null) continue;
-                var go = new GameObject("Slot");
-                go.transform.SetParent(transform);
-                var slot = go.AddComponent<GunSlot>();
-                slot.Build(slotData, level);
-                _slots.Add(slot);
+                for (int i = 0; i < slots.Count; i++)
+                {
+                    bool active = i < level.Slots.Count
+                                  && level.Slots[i]?.Guns != null
+                                  && level.Slots[i].Guns.Count > 0;
+                    slots[i].gameObject.SetActive(active);
+                    if (active)
+                    {
+                        slots[i].Fill(level.Slots[i].Guns, spacing, fireInterval, fireRange, bulletSpeed);
+                        _activeSlots.Add(slots[i]);
+                    }
+                }
+            }
+            else
+            {
+                // Fallback: chưa đặt slot trên scene → tạo 1 hàng slot mặc định.
+                float gap = Mathf.Max(1.5f, spacing * 3f);
+                for (int i = 0; i < level.Slots.Count; i++)
+                {
+                    var sd = level.Slots[i];
+                    if (sd?.Guns == null || sd.Guns.Count == 0) continue;
+                    var go = new GameObject("Slot" + i);
+                    go.transform.SetParent(transform);
+                    var slot = go.AddComponent<GunSlot>();
+                    slot.SlotIndex = i;
+                    slot.SetPosition(new Vector3(i * gap, 0f, 0f));
+                    slot.Fill(sd.Guns, spacing, fireInterval, fireRange, bulletSpeed);
+                    _activeSlots.Add(slot);
+                    _fallbackCreated.Add(go);
+                }
             }
         }
 
         public void Clear()
         {
-            foreach (var s in _slots) if (s != null) { s.Clear(); Destroy(s.gameObject); }
-            _slots.Clear();
+            foreach (var s in _activeSlots) if (s != null) s.Clear();
+            _activeSlots.Clear();
+            foreach (var go in _fallbackCreated) if (go != null) Destroy(go);
+            _fallbackCreated.Clear();
         }
 
         public void OnGunClicked(Gun gun)
         {
             if (gun == null) return;
-
             var slot = gun.Slot;
             if (slot == null || slot.FrontGun != gun) return;              // chỉ gun đầu slot
             if (PathManager.Instance == null || !PathManager.Instance.CanAccept) return; // path đã đầy
 
             slot.RemoveFront();
-            PathManager.Instance.AddGun(gun);
-            gun.OnDeployed();
+            gun.OnDeployed();                 // tách khỏi slot, chuyển sang OnPath
+            PathManager.Instance.AddGun(gun); // gán distance + animate lên path
             GameController.Instance?.OnBoardChanged();
+        }
+
+        private List<GunSlot> ResolveSceneSlots()
+        {
+            var list = new List<GunSlot>();
+            if (sceneSlots != null)
+                foreach (var s in sceneSlots) if (s != null) list.Add(s);
+
+            if (list.Count == 0)
+                list.AddRange(FindObjectsOfType<GunSlot>(true));
+
+            list.Sort((a, b) => a.SlotIndex.CompareTo(b.SlotIndex));
+            return list;
         }
     }
 }

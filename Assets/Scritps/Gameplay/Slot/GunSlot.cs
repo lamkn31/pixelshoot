@@ -4,32 +4,41 @@ using UnityEngine;
 namespace Wayfu.Lamkn
 {
     /// <summary>
-    /// 1 hàng chứa các gun theo thứ tự ra. Chỉ gun đầu (FrontGun) mới deploy được;
-    /// khi gun đầu rời đi, các gun phía sau dồn lên (yêu cầu #3, #6).
+    /// 1 hàng gun — ĐẶT SẴN TRÊN SCENE (Slot0..4). Vị trí lấy từ transform; gun trong slot xếp theo
+    /// index, cách nhau theo TRỤC Z với spacing DÙNG CHUNG (GameSettings). Level chỉ điền danh sách gun;
+    /// số slot có gun = số slot active. Gun đầu (FrontGun) mới deploy được; gun đầu đi thì gun sau dồn lên.
     /// </summary>
     public class GunSlot : MonoBehaviour
     {
+        [Tooltip("Chỉ số slot 0..4 — quyết định thứ tự active theo số lượng slot của level.")]
+        public int SlotIndex;
         [SerializeField] private float shiftDuration = 0.15f;
 
         private readonly List<Gun> _guns = new List<Gun>();
-        private Vector3 _pos, _dir;
-        private float _spacing;
+        private float _spacing = 1f;
 
         public Gun FrontGun => _guns.Count > 0 ? _guns[0] : null;
         public int Count => _guns.Count;
 
-        public void Build(SlotData data, LevelData level)
-        {
-            _pos = data.Position;
-            _dir = data.Direction.sqrMagnitude > 0.0001f ? data.Direction.normalized : Vector3.up;
-            _spacing = data.Spacing;
+        /// <summary>Vị trí của gun theo index trong slot — cách nhau dọc trục Z.</summary>
+        private Vector3 SlotPos(int index) => transform.position + Vector3.forward * _spacing * index;
 
-            for (int i = 0; i < data.Guns.Count; i++)
+        /// <summary>Đặt vị trí slot (dùng cho fallback khi scene chưa có slot).</summary>
+        public void SetPosition(Vector3 pos) => transform.position = pos;
+
+        /// <summary>Nạp gun cho slot (lấy từ pool); spacing dùng chung truyền vào.</summary>
+        public void Fill(List<GunData> guns, float spacing, float fireInterval, float fireRange, float bulletSpeed)
+        {
+            _spacing = spacing;
+            Clear();
+            if (guns == null) return;
+            for (int i = 0; i < guns.Count; i++)
             {
-                if (data.Guns[i] == null) continue;
-                var g = GameplayFactory.CreateGun(level.GunPrefab, transform);
-                g.transform.position = _pos + _dir * _spacing * i;
-                g.Init(data.Guns[i], level.FireInterval);
+                if (guns[i] == null) continue;
+                var g = PoolManager.Instance.GetGun();
+                g.transform.SetParent(transform);
+                g.transform.position = SlotPos(i);
+                g.Init(guns[i], fireInterval, fireRange, bulletSpeed);
                 g.SetSlot(this);
                 _guns.Add(g);
             }
@@ -41,14 +50,19 @@ namespace Wayfu.Lamkn
             var front = _guns[0];
             _guns.RemoveAt(0);
             for (int i = 0; i < _guns.Count; i++)
-                _guns[i].MoveTo(_pos + _dir * _spacing * i, shiftDuration);
+                _guns[i].MoveTo(SlotPos(i), shiftDuration); // dồn gun sau lên
             return front;
         }
 
-        public void Clear()
+        // Gun được trả về pool qua PoolManager.ReturnAll khi rebuild — ở đây chỉ xoá list.
+        public void Clear() => _guns.Clear();
+
+        private void OnDrawGizmos()
         {
-            foreach (var g in _guns) if (g != null) Destroy(g.gameObject);
-            _guns.Clear();
+            float sp = _spacing > 0f ? _spacing : GameSettings.SlotSpacing;
+            Gizmos.color = new Color(1f, 1f, 1f, 0.5f);
+            Gizmos.DrawWireSphere(transform.position, 0.3f);
+            Gizmos.DrawLine(transform.position, transform.position + Vector3.forward * sp); // hướng queue (Z)
         }
     }
 }
