@@ -14,6 +14,14 @@ namespace Wayfu.Lamkn
     public enum BlockObstacleType { None, Crate, Lock, Ice, Mystery, Barricade }
 
     /// <summary>
+    /// Kiểu cell.
+    /// <para><b>Normal</b>: phá hết stack là cell biến mất.</para>
+    /// <para><b>Spawner</b>: có hàng đợi cell PHÍA SAU. Phá hết stack hiện tại → đẩy cell kế trong hàng đợi
+    /// ra ĐÚNG vị trí đó (đổi màu/stack theo mục kế); hết hàng đợi mới thật sự biến mất.</para>
+    /// </summary>
+    public enum BlockCellType { Normal, Spawner }
+
+    /// <summary>
     /// Cách chia số cell mỗi hàng của grid.
     /// <para><b>ArcLength</b>: số cell = chiều dài cung / (BlockWidth+Spacing) → hàng ra xa có NHIỀU cell hơn
     /// (4/5/6...). Cột không thẳng: 1 cell hàng sau bị chặn bởi TỐI ĐA 2 cell hàng trước (theo góc).</para>
@@ -45,6 +53,8 @@ namespace Wayfu.Lamkn
         public BlockGridShape Shape = BlockGridShape.Arc;
         [Tooltip("Tâm grid (sàn XZ).")]
         public Vector3 Center;
+        [Tooltip("Xoay cả grid quanh trục Y (độ). 0 = grid mở/sâu dần về +Z.")]
+        public float Rotation;
         [Tooltip("Arc: bán kính hàng đầu. Rect: khoảng cách từ Center tới hàng đầu (row 0, gần path).")]
         public float BaseRadius = 3f;
         [Tooltip("CHỈ dùng cho Rect: số cell mỗi hàng (mọi hàng bằng nhau → cột thẳng).")]
@@ -236,6 +246,10 @@ namespace Wayfu.Lamkn
         public int SpawnerDepth;
         [Tooltip("Số block xếp chồng trong cell (~ BlockStackCt).")]
         [Min(1)] public int BlockStackCt = 3;
+        [Tooltip("Normal = phá xong biến mất. Spawner = còn hàng đợi phía sau, phá xong thì đẩy cell kế ra.")]
+        public BlockCellType Type = BlockCellType.Normal;
+        [Tooltip("CHỈ dùng cho Spawner: các cell PHÍA SAU, đẩy ra lần lượt khi cell hiện tại bị phá hết.")]
+        public List<PendingBlockData> Queue = new List<PendingBlockData>();
         [Tooltip("Hướng dồn/spawn của cell trên sàn ngang XZ, tính bằng độ quanh trục Y (0° = +Z).")]
         public float SpawnerDirectionAngleZ;
 

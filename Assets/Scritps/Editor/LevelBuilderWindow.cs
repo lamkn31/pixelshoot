@@ -55,8 +55,15 @@ namespace Wayfu.Lamkn
         private int _genStack = 3;
         private BlockGridShape _genShape = BlockGridShape.Arc; // loại grid khi bấm "+ Grid"
 
-        // Bảng màu tô cell bằng click trong khung giữa. -1 = None → click KHÔNG đổi màu cell.
+        // Bảng màu tô cell bằng click trong khung giữa. -1 = None → click để CHỌN xem/sửa thông số.
         private int _paintColorIdx = -1;
+
+        // Đối tượng đang chọn trong khung giữa (chỉ khi Paint = None). -1 = không chọn.
+        private int _selGrid = -1, _selCell = -1;   // cell
+        private int _selSlot = -1, _selGun = -1;    // gun
+
+        private void SelectCell(int gi, int flat) { _selGrid = gi; _selCell = flat; _selSlot = -1; _selGun = -1; }
+        private void SelectGun(int si, int gi) { _selSlot = si; _selGun = gi; _selGrid = -1; _selCell = -1; }
 
         // Foldout: thu gọn từng nhóm cho panel phải ngắn lại (chỉ GRIDS mở sẵn).
         private bool _foldMeta, _foldPath, _foldPrefabs, _foldWaypoints, _foldSlots, _foldGrids = true;
@@ -361,8 +368,8 @@ namespace Wayfu.Lamkn
                 var blockLbl = new GUIStyle(EditorStyles.miniBoldLabel) { alignment = TextAnchor.MiddleCenter };
                 blockLbl.normal.textColor = Color.white;
 
-                // Chỉ thu thập vùng click khi thật sự đang tô màu (Paint != None) và có MouseDown.
-                bool collectHits = _paintColorIdx >= 0 && Event.current.type == EventType.MouseDown;
+                // Thu vùng click khi có MouseDown (dùng cho cả tô màu lẫn chọn cell).
+                bool collectHits = Event.current.type == EventType.MouseDown;
                 List<(Rect rect, int flat)> cellHits = collectHits ? new List<(Rect, int)>() : null;
 
                 for (int gi = 0; gi < _target.Grids.Count; gi++)
@@ -397,8 +404,12 @@ namespace Wayfu.Lamkn
                             if (!Front(wp)) continue;
                             Vector2 bp = Proj(wp); float sz = PixSize(wp, 0.5f);
                             var cellRect = new Rect(bp.x - sz / 2, bp.y - sz / 2, sz, sz);
+                            int flatIdx = grid.CellIndex(r, e);
                             FillRect(cellRect, BlockColorPalette.ToColor(cell.Color));
-                            cellHits?.Add((cellRect, grid.CellIndex(r, e)));
+                            cellHits?.Add((cellRect, flatIdx));
+                            // Viền vàng = cell đang chọn; viền cam = cell Spawner (còn hàng đợi phía sau).
+                            if (_selGrid == gi && _selCell == flatIdx) DrawOutline(cellRect, Color.yellow, area);
+                            else if (cell.Type == BlockCellType.Spawner) DrawOutline(cellRect, new Color(1f, 0.6f, 0.1f), area);
                             // Số block trong stack (giống nhãn số đạn của gun).
                             if (sz >= 10f && area.Contains(bp))
                                 GUI.Label(new Rect(bp.x - sz / 2, bp.y - sz / 2, sz, sz), cell.BlockStackCt.ToString(), blockLbl);
@@ -448,8 +459,18 @@ namespace Wayfu.Lamkn
                         Vector3 wp = basePos - Vector3.forward * spacing * i; // index 0 phía trước (+Z)
                         if (!Front(wp)) continue;
                         Vector2 gp = Proj(wp); float sz = PixSize(wp, 0.6f);
-                        FillRect(new Rect(gp.x - sz / 2, gp.y - sz / 2, sz, sz), BlockColorPalette.ToColor(g.Color));
-                        if (area.Contains(gp)) GUI.Label(new Rect(gp.x - sz / 2, gp.y - sz / 2, sz, sz), g.CountBullet.ToString(), lbl);
+                        var gunRect = new Rect(gp.x - sz / 2, gp.y - sz / 2, sz, sz);
+                        FillRect(gunRect, BlockColorPalette.ToColor(g.Color));
+                        if (area.Contains(gp)) GUI.Label(gunRect, g.CountBullet.ToString(), lbl);
+                        if (_selSlot == si && _selGun == i) DrawOutline(gunRect, Color.yellow, area);
+                        // Paint = None → click gun để xem/sửa số đạn + màu ở panel phải.
+                        if (_paintColorIdx < 0)
+                        {
+                            var ev = Event.current;
+                            if (ev.type == EventType.MouseDown && ev.button == 0 && !ev.alt
+                                && area.Contains(ev.mousePosition) && gunRect.Contains(ev.mousePosition))
+                            { SelectGun(si, i); ev.Use(); Repaint(); }
+                        }
                     }
                 }
             }
@@ -543,6 +564,16 @@ namespace Wayfu.Lamkn
             else if (e.type == EventType.MouseUp) { _dragGrid = -1; _dragHandle = -1; e.Use(); }
         }
 
+        // Viền 1px quanh ô (đánh dấu cell đang chọn / cell Spawner).
+        private static void DrawOutline(Rect r, Color col, Rect clip)
+        {
+            void Bar(Rect b) { var ir = RectIntersect(b, clip); if (ir.width > 0 && ir.height > 0) EditorGUI.DrawRect(ir, col); }
+            Bar(new Rect(r.x, r.y, r.width, 1f));
+            Bar(new Rect(r.x, r.yMax - 1f, r.width, 1f));
+            Bar(new Rect(r.x, r.y, 1f, r.height));
+            Bar(new Rect(r.xMax - 1f, r.y, 1f, r.height));
+        }
+
         // Đầu mũi tên hướng của 1 cell — kéo để xoay SpawnerDirectionAngleZ.
         private void CellRotateHandle(int gi, int flatIndex, Vector3 centerWorld, Vector2 tip, Rect area)
         {
@@ -559,10 +590,10 @@ namespace Wayfu.Lamkn
             }
         }
 
-        // Click trái vào ô cell → tô thành màu đang chọn ở bảng Paint Color (None thì bỏ qua).
+        // Click trái vào ô cell: có màu ở Paint Color → tô màu đó; Paint = None → CHỌN cell để xem/sửa
+        // thông số (màu, stack, type, hàng đợi) ở panel phải.
         private void PaintCellClick(int gi, List<(Rect rect, int flat)> hits, Rect area)
         {
-            if (_paintColorIdx < 0) return; // None → không tô
             var e = Event.current;
             if (e.type != EventType.MouseDown || e.button != 0 || e.alt || !area.Contains(e.mousePosition)) return;
             var grids = _so.FindProperty("Grids");
@@ -572,8 +603,11 @@ namespace Wayfu.Lamkn
             {
                 if (!hits[i].rect.Contains(e.mousePosition)) continue;
                 int flat = hits[i].flat;
-                if (flat >= 0 && flat < cells.arraySize)
+                if (flat < 0 || flat >= cells.arraySize) return;
+                if (_paintColorIdx >= 0)
                     cells.GetArrayElementAtIndex(flat).FindPropertyRelative("Color").enumValueIndex = _paintColorIdx;
+                else
+                    SelectCell(gi, flat);
                 e.Use(); Repaint();
                 return;
             }
@@ -706,7 +740,8 @@ namespace Wayfu.Lamkn
             EditorGUILayout.HelpBox(rep0, ok0 ? MessageType.Info : MessageType.Warning);
 
             _rightScroll = EditorGUILayout.BeginScrollView(_rightScroll);
-            DrawMetaSection();
+            DrawSelectionSection();
+            EditorGUILayout.Space(4); DrawMetaSection();
             EditorGUILayout.Space(4); DrawPathSection();
             EditorGUILayout.Space(4); DrawPrefabsSection();
             EditorGUILayout.Space(4); DrawSlotsSection();
@@ -729,6 +764,96 @@ namespace Wayfu.Lamkn
                     new GUIContent("Hole Capacity", "Stack mỗi cell khi Generate Cells."));
             }
             EditorGUILayout.EndVertical();
+        }
+
+        // Thông số của gun/cell đang click chọn trong khung giữa (chỉ hiện khi Paint Color = None).
+        private void DrawSelectionSection()
+        {
+            if (_selGun >= 0) DrawSelectedGun();
+            else if (_selCell >= 0) DrawSelectedCell();
+            else if (_paintColorIdx < 0)
+                EditorGUILayout.HelpBox("Paint Color = None → click 1 GUN hoặc 1 CELL trong khung giữa để xem/sửa thông số.", MessageType.None);
+        }
+
+        private void DrawSelectedGun()
+        {
+            var slots = _so.FindProperty("Slots");
+            if (_selSlot < 0 || _selSlot >= slots.arraySize) { _selGun = -1; return; }
+            var guns = slots.GetArrayElementAtIndex(_selSlot).FindPropertyRelative("Guns");
+            if (_selGun >= guns.arraySize) { _selGun = -1; return; }
+
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField($"GUN — Slot {_selSlot} · #{_selGun}", EditorStyles.boldLabel);
+            if (GUILayout.Button("✕", BtnW)) { _selGun = -1; _selSlot = -1; }
+            EditorGUILayout.EndHorizontal();
+
+            var g = guns.GetArrayElementAtIndex(_selGun);
+            EditorGUILayout.PropertyField(g.FindPropertyRelative("Color"), new GUIContent("Màu"));
+            EditorGUILayout.PropertyField(g.FindPropertyRelative("CountBullet"), new GUIContent("Số lượng đạn"));
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawSelectedCell()
+        {
+            var grids = _so.FindProperty("Grids");
+            if (_selGrid < 0 || _selGrid >= grids.arraySize) { _selCell = -1; return; }
+            var cells = grids.GetArrayElementAtIndex(_selGrid).FindPropertyRelative("Cells");
+            if (_selCell >= cells.arraySize) { _selCell = -1; return; }
+
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField($"CELL — Grid {_selGrid} · #{_selCell}", EditorStyles.boldLabel);
+            if (GUILayout.Button("✕", BtnW)) { _selCell = -1; _selGrid = -1; }
+            EditorGUILayout.EndHorizontal();
+
+            var c = cells.GetArrayElementAtIndex(_selCell);
+            EditorGUILayout.PropertyField(c.FindPropertyRelative("Color"), new GUIContent("Màu"));
+            EditorGUILayout.PropertyField(c.FindPropertyRelative("BlockStackCt"), new GUIContent("Stack"));
+
+            var typeProp = c.FindPropertyRelative("Type");
+            EditorGUILayout.PropertyField(typeProp, new GUIContent("Type"));
+            if (typeProp.enumValueIndex == (int)BlockCellType.Spawner) DrawCellQueue(c);
+            else EditorGUILayout.HelpBox("Normal: phá hết stack là cell biến mất.", MessageType.None);
+            EditorGUILayout.EndVertical();
+        }
+
+        // Hàng đợi cell PHÍA SAU của 1 cell Spawner: phá hết stack hiện tại → đẩy mục kế ra tại chỗ.
+        private void DrawCellQueue(SerializedProperty cell)
+        {
+            var q = cell.FindPropertyRelative("Queue");
+            if (q == null) return;
+
+            int total = 0;
+            for (int i = 0; i < q.arraySize; i++)
+                total += Mathf.Max(0, q.GetArrayElementAtIndex(i).FindPropertyRelative("BlockStackCt").intValue);
+            EditorGUILayout.LabelField($"Cell phía sau — {q.arraySize} mục · ∑{total} block", EditorStyles.miniBoldLabel);
+            EditorGUILayout.HelpBox("Spawner: phá hết stack hiện tại → đẩy mục kế ra ĐÚNG vị trí này (đổi màu/stack). Hết hàng đợi mới biến mất. Block ở đây CÓ tính vào cân bằng bullet↔block.", MessageType.None);
+
+            int pend = -1; ListOp op = ListOp.None;
+            for (int i = 0; i < q.arraySize; i++)
+            {
+                var it = q.GetArrayElementAtIndex(i);
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField((i + 1) + ".", GUILayout.Width(20));
+                EditorGUILayout.PropertyField(it.FindPropertyRelative("Color"), GUIContent.none, GUILayout.MinWidth(70));
+                EditorGUILayout.PropertyField(it.FindPropertyRelative("BlockStackCt"), GUIContent.none, GUILayout.Width(50));
+                var o = MiniButtons(i, q.arraySize);
+                if (o != ListOp.None) { pend = i; op = o; }
+                EditorGUILayout.EndHorizontal();
+            }
+
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("+ Cell sau"))
+            {
+                var e = q.GetArrayElementAtIndex(AddArray(q));
+                e.FindPropertyRelative("Color").enumValueIndex = _paintColorIdx >= 0 ? _paintColorIdx : (int)_genColor;
+                e.FindPropertyRelative("BlockStackCt").intValue = Mathf.Max(1, _target.HoleCapacity);
+            }
+            if (GUILayout.Button("Clear")) q.arraySize = 0;
+            EditorGUILayout.EndHorizontal();
+
+            if (pend >= 0) ApplyOp(q, pend, op);
         }
 
         private void DrawPrefabsSection()

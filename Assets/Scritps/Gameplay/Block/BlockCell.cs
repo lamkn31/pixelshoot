@@ -15,10 +15,14 @@ namespace Wayfu.Lamkn
         public int BlockCol { get; private set; }
         public int Depth { get; private set; }
 
+        /// <summary>Cập nhật index cột khi cell dồn lên ô khác (Arc cột lệch: index có thể đổi).</summary>
+        public void SetColumn(int col) => BlockCol = col;
+
         private readonly List<Block> _blocks = new List<Block>();
         private GridBlockManager _manager;
         private Coroutine _moveRoutine;
         private int _pendingHits;
+        private float _stackSpacing;
 
         public int StackCount => _blocks.Count;
         /// <summary>Số block chưa bị đạn "đặt chỗ" (đạn đang bay) — gun chỉ bắn khi còn &gt; 0.</summary>
@@ -28,17 +32,23 @@ namespace Wayfu.Lamkn
         public void Build(BlockCellData data, float stackSpacing, GridBlockManager manager)
         {
             _manager = manager;
-            Color = data.Color;
+            _stackSpacing = stackSpacing;
             BlockCol = data.BlockCol;
             Depth = data.SpawnerDepth;
             _pendingHits = 0;
 
-            int n = Mathf.Max(1, data.BlockStackCt);
+            Fill(data.Color, Mathf.Max(1, data.BlockStackCt));
+        }
+
+        // Dựng stack block cùng màu tại chỗ (dùng cho cả lần đầu lẫn khi Spawner đẩy cell kế ra).
+        private void Fill(BlockColor color, int n)
+        {
+            Color = color;
             for (int j = 0; j < n; j++)
             {
                 var b = PoolManager.Instance.GetBlock();
                 b.transform.SetParent(transform);
-                b.transform.position = transform.position + Vector3.up * stackSpacing * j; // stack theo Y
+                b.transform.position = transform.position + Vector3.up * _stackSpacing * j; // stack theo Y
                 b.Init(this, j, Color);
                 _blocks.Add(b);
             }
@@ -63,7 +73,8 @@ namespace Wayfu.Lamkn
             _blocks.RemoveAt(last);
             if (b != null) b.Despawn(); // trả block về pool
 
-            if (_blocks.Count == 0 && _manager != null) _manager.OnCellCleared(this);
+            if (_blocks.Count > 0) return;
+            if (_manager != null) _manager.OnCellCleared(this);
         }
 
         public void MoveTo(Vector3 target, float duration)

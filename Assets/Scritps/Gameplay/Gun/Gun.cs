@@ -28,6 +28,7 @@ namespace Wayfu.Lamkn
         private float _bulletSpeed = 14f;
         private float _fireTimer;
         private BlockCell _currentTarget;
+        private int _lockedCol = -1;   // cột đang cam kết ăn dứt (BlockCol); -1 = chưa cam kết
         private Renderer _renderer;
         private TextMesh _label;
         private Coroutine _moveRoutine;
@@ -61,6 +62,7 @@ namespace Wayfu.Lamkn
             // Reset trạng thái (item pooled có thể tái dùng).
             _fireTimer = 0f;
             _currentTarget = null;
+            _lockedCol = -1;
             if (_moveRoutine != null) { StopCoroutine(_moveRoutine); _moveRoutine = null; }
 
             _renderer = GetComponentInChildren<Renderer>();
@@ -107,8 +109,15 @@ namespace Wayfu.Lamkn
 
             // Bám target tới khi cell bị phá HẾT rồi mới chọn cell khác (yêu cầu: dứt điểm từng cell).
             // Cell bị clear sẽ Destroy → reference == null, nên chỉ cần check null/IsEmpty.
-            if (_currentTarget == null || _currentTarget.IsEmpty)
-                _currentTarget = GridBlockManager.Instance?.FindTargetCell(Data.Color, transform.position, _fireRange);
+            // Cell Spawner đẩy cell kế ra TẠI CHỖ và có thể ĐỔI MÀU → phải bỏ khoá nếu màu hết khớp.
+            if (_currentTarget == null || _currentTarget.IsEmpty || _currentTarget.Color != Data.Color)
+            {
+                _currentTarget = GridBlockManager.Instance?.FindTargetCell(
+                    Data.Color, transform.position, _fireRange, _lockedCol);
+                // Cột cạn (không còn cell cùng màu bắn được) → nhả cam kết; muốn ăn cột mới phải lọt
+                // vòng phát hiện lần nữa, nên gun đã chạy qua grid sẽ không bắn cell vừa xuất hiện.
+                _lockedCol = _currentTarget != null ? _currentTarget.BlockCol : -1;
+            }
 
             _fireTimer -= Time.deltaTime;
             // KHÔNG gate theo range: range chỉ dùng để PHÁT HIỆN target (xem FindTargetCell). Đã chốt được

@@ -75,9 +75,20 @@ namespace Wayfu.Lamkn
                 if (grid.Cells != null)
                     foreach (var c in grid.Cells)
                     {
-                        if (c == null || c.BlockStackCt <= 0) continue;
-                        d.TryGetValue(c.Color, out var v);
-                        d[c.Color] = v + c.BlockStackCt;
+                        if (c == null) continue;
+                        if (c.BlockStackCt > 0)
+                        {
+                            d.TryGetValue(c.Color, out var v);
+                            d[c.Color] = v + c.BlockStackCt;
+                        }
+                        // Cell Spawner: các cell phía sau cũng phải bắn → tính vào cân bằng.
+                        if (c.Type != BlockCellType.Spawner || c.Queue == null) continue;
+                        foreach (var q in c.Queue)
+                        {
+                            if (q == null || q.BlockStackCt <= 0) continue;
+                            d.TryGetValue(q.Color, out var qv);
+                            d[q.Color] = qv + q.BlockStackCt;
+                        }
                     }
                 // Block trong hàng đợi refill của spawner cũng cần khớp bullet.
                 if (grid.PendingRefill != null)
