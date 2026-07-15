@@ -30,6 +30,8 @@ namespace Wayfu.Lamkn
         [Header("Block")]
         [Tooltip("Khoảng cách giữa các block trong 1 stack (theo trục Y).")]
         public float BlockStackSpacing = 0.5f;
+        [Tooltip("Tốc độ dồn hàng: thời gian (giây) cell trượt từ ô cũ sang ô mới. NHỎ = dồn NHANH.")]
+        [Min(0f)] public float BlockCollapseDuration = 0.25f;
 
         private static GameSettings _instance;
 

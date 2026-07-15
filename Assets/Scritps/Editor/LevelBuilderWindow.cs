@@ -264,7 +264,8 @@ namespace Wayfu.Lamkn
             if (_gsSO == null || _gsSO.targetObject != gs) _gsSO = new SerializedObject(gs);
             _gsSO.Update();
             foreach (var name in new[] { "SlotGunSpacing", "MaxGunOnPath", "GunSpeed", "GunSpacing",
-                "FireInterval", "GunFireRange", "FrontStationDistance", "BulletSpeed", "BlockStackSpacing" })
+                "FireInterval", "GunFireRange", "FrontStationDistance", "BulletSpeed", "BlockStackSpacing",
+                "BlockCollapseDuration" })
                 EditorGUILayout.PropertyField(_gsSO.FindProperty(name));
             _gsSO.ApplyModifiedProperties();
             EditorGUILayout.EndVertical();
@@ -1157,6 +1158,10 @@ namespace Wayfu.Lamkn
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("BlockWidth"), new GUIContent("Block W"));
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("Spacing"), new GUIContent("Spacing"));
                 EditorGUILayout.EndHorizontal();
+                EditorGUILayout.PropertyField(grid.FindPropertyRelative("CellScale"),
+                    new GUIContent("Cell Scale", "Scale của mọi BLOCK trong grid này."));
+                EditorGUILayout.PropertyField(grid.FindPropertyRelative("StackSpacing"),
+                    new GUIContent("Stack Spacing", "Khoảng cách block trong 1 stack (trục Y) riêng grid này. 0 = dùng GameSettings."));
                 if (!isRect) EditorGUILayout.PropertyField(grid.FindPropertyRelative("Layout"), new GUIContent("Layout"));
                 EditorGUILayout.HelpBox(DescribeLayout(i), MessageType.None);
 
@@ -1189,6 +1194,8 @@ namespace Wayfu.Lamkn
             g.FindPropertyRelative("SpiralGrowth").floatValue = 0f;
             g.FindPropertyRelative("BlockWidth").floatValue = 0.8f;
             g.FindPropertyRelative("Spacing").floatValue = 0.2f;
+            g.FindPropertyRelative("CellScale").vector3Value = Vector3.one;
+            g.FindPropertyRelative("StackSpacing").floatValue = 0f; // 0 = theo GameSettings
             g.FindPropertyRelative("Layout").enumValueIndex = (int)BlockGridLayout.ArcLength;
             g.FindPropertyRelative("Cells").arraySize = 0;
         }

@@ -11,7 +11,8 @@ namespace Wayfu.Lamkn
     /// </summary>
     public class GridBlockManager : Singleton<GridBlockManager>
     {
-        [SerializeField] private float collapseDuration = 0.25f;
+        // Tốc độ dồn hàng lấy từ GameSettings (config chung), nạp lại mỗi lần Build.
+        private float _collapseDuration = 0.25f;
 
         // Nguồn Spawner: 1 Ô CỐ ĐỊNH trên lưới. Cell ở đó dồn lên như cell thường; hễ ô trống là nhả mục kế
         // trong hàng đợi ẩn ra đúng ô đó — lặp tới khi cạn.
@@ -38,7 +39,9 @@ namespace Wayfu.Lamkn
         public void Build(LevelData level)
         {
             Clear();
-            float stackSpacing = GameSettings.Instance != null ? GameSettings.Instance.BlockStackSpacing : 0.5f;
+            var gs = GameSettings.Instance;
+            float globalSpacing = gs != null ? gs.BlockStackSpacing : 0.5f;
+            _collapseDuration = gs != null ? gs.BlockCollapseDuration : 0.25f;
 
             foreach (var grid in level.Grids)
             {
@@ -50,7 +53,8 @@ namespace Wayfu.Lamkn
                 {
                     Data = grid,
                     Root = gridGo.transform,
-                    StackSpacing = stackSpacing,
+                    // StackSpacing riêng của grid; <= 0 thì rơi về config chung.
+                    StackSpacing = grid.StackSpacing > 0f ? grid.StackSpacing : globalSpacing,
                     Pending = BuildPendingQueue(grid),
                 };
 
@@ -105,7 +109,9 @@ namespace Wayfu.Lamkn
             cell.transform.rotation = gr.Data.Shape == BlockGridShape.Rect
                 ? Quaternion.identity
                 : Quaternion.Euler(0f, data.SpawnerDirectionAngleZ, 0f);
-            cell.Build(data, gr.StackSpacing, this);
+            // Cell chỉ là node chứa → giữ scale 1; CellScale của grid áp thẳng lên BLOCK bên trong.
+            cell.transform.localScale = Vector3.one;
+            cell.Build(data, gr.StackSpacing, gr.Data.CellScale, this);
             return cell;
         }
 
@@ -254,7 +260,7 @@ namespace Wayfu.Lamkn
                     prev[slot] = cell;
                     cur[e] = null;
                     cell.SetColumn(slot);
-                    cell.MoveTo(gr.Data.CellPosAt(r - 1, slot, prev.Length), collapseDuration);
+                    cell.MoveTo(gr.Data.CellPosAt(r - 1, slot, prev.Length), _collapseDuration);
                     moved = true;
                 }
             }
@@ -292,7 +298,7 @@ namespace Wayfu.Lamkn
                 // Xuất phát từ ô sâu hơn 1 bậc rồi trượt vào → nhìn rõ là được đẩy ra.
                 Vector3 spawnPos = gr.Data.CellPosAt(src.Row + 1, src.Col, cols);
                 var cell = CreateCell(gr, $"Cell_spawn_r{src.Row}_e{src.Col}", spawnPos, data);
-                cell.MoveTo(pos, collapseDuration);
+                cell.MoveTo(pos, _collapseDuration);
                 gr.Rows[src.Row][src.Col] = cell;
             }
             return fed;
@@ -331,7 +337,7 @@ namespace Wayfu.Lamkn
                 };
 
                 row[e] = CreateCell(gr, $"Cell_refill_r{rowIndex}_e{e}", spawnPos, data);
-                row[e].MoveTo(pos, collapseDuration);
+                row[e].MoveTo(pos, _collapseDuration);
                 fed = true;
             }
             return fed;

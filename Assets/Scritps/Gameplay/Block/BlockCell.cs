@@ -28,6 +28,7 @@ namespace Wayfu.Lamkn
         private Coroutine _moveRoutine;
         private int _pendingHits;
         private float _stackSpacing;
+        private Vector3 _blockScale = Vector3.one;
         private Pooler<BlockCell> _pool;
 
         public void OnInitializedInPool(Pooler<BlockCell> pool) => _pool = pool;
@@ -37,10 +38,11 @@ namespace Wayfu.Lamkn
         public int Available => _blocks.Count - _pendingHits;
         public bool IsEmpty => _blocks.Count == 0;
 
-        public void Build(BlockCellData data, float stackSpacing, GridBlockManager manager)
+        public void Build(BlockCellData data, float stackSpacing, Vector3 blockScale, GridBlockManager manager)
         {
             _manager = manager;
             _stackSpacing = stackSpacing;
+            _blockScale = blockScale == Vector3.zero ? Vector3.one : blockScale;
             BlockCol = data.BlockCol;
             Depth = data.SpawnerDepth;
             _pendingHits = 0;
@@ -65,6 +67,9 @@ namespace Wayfu.Lamkn
             {
                 var b = PoolManager.Instance.GetBlock();
                 b.transform.SetParent(parent);
+                // Set scale SAU khi SetParent: SetParent(worldPositionStays=true) bù localScale để giữ scale
+                // world, nên phải gán đè thì scale của grid mới ăn. Cell không scale → local = world.
+                b.transform.localScale = _blockScale;
                 b.transform.position = transform.position + Vector3.up * _stackSpacing * j; // stack theo Y
                 b.transform.rotation = transform.rotation;
                 b.Init(this, j, Color);

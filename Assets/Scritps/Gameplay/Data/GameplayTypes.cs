@@ -67,6 +67,11 @@ namespace Wayfu.Lamkn
         public float BlockWidth = 0.8f;
         [Tooltip("Khoảng cách giữa 2 block trên cùng hàng.")]
         public float Spacing = 0.2f;
+        [Tooltip("Scale của MỌI block trong grid này (cell chỉ là node chứa nên scale áp thẳng lên block).")]
+        public Vector3 CellScale = Vector3.one;
+        [Tooltip("Khoảng cách giữa các block trong 1 stack (trục Y) RIÊNG cho grid này. " +
+                 "<= 0 → dùng GameSettings.BlockStackSpacing.")]
+        public float StackSpacing = 0f;
         [Tooltip("ArcLength = hàng ra xa nhiều cell hơn (cột lệch). Uniform = mọi hàng bằng nhau (cột thẳng).")]
         public BlockGridLayout Layout = BlockGridLayout.ArcLength;
         [Tooltip("Cell theo thứ tự (row, element). Chỉ dùng Color + BlockStackCt.")]
