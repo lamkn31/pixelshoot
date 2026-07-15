@@ -429,10 +429,20 @@ namespace Wayfu.Lamkn
                         }
                     }
 
-                    // Handle: tâm + 2 đầu cạnh (kéo được).
+                    // Handle: tâm + 2 đầu cạnh + xoay (kéo được).
                     GridHandle(gi, 0, Proj(grid.Center), area);
                     GridHandle(gi, 1, Proj(grid.CellPos(0, 0)), area);                               // trái
                     GridHandle(gi, 2, Proj(grid.CellPos(0, grid.ElementsInRow(0) - 1)), area);         // phải
+
+                    // Handle xoay: nằm trên hướng "sâu dần" của grid, ra ngoài hàng cuối 1 bậc.
+                    Vector3 rotW = grid.Center + grid.Forward *
+                                   (grid.BaseRadius + Mathf.Max(1, grid.Rows) * grid.RowSpacing);
+                    if (Front(rotW))
+                    {
+                        Handles.color = new Color(0.3f, 1f, 0.4f, 0.9f);
+                        Line(Proj(grid.Center), Proj(rotW));
+                        GridHandle(gi, 3, Proj(rotW), area);
+                    }
 
                     // Click cell = tô màu Gen Color (sau handle xoay/resize để nhường ưu tiên).
                     if (cellHits != null) PaintCellClick(gi, cellHits, area);
@@ -515,9 +525,11 @@ namespace Wayfu.Lamkn
             float hr = hid == 0 ? 7f : 6f;
             var hrect = new Rect(p.x - hr, p.y - hr, hr * 2, hr * 2);
             bool active = _dragGrid == gi && _dragHandle == hid;
-            Color col = hid == 0 ? new Color(1f, 0.5f, 0.9f, 0.9f) : new Color(0.3f, 0.9f, 1f, 0.9f);
+            Color col = hid == 0 ? new Color(1f, 0.5f, 0.9f, 0.9f)          // tâm: hồng
+                      : hid == 3 ? new Color(0.3f, 1f, 0.4f, 0.9f)          // xoay: xanh lá
+                                 : new Color(0.3f, 0.9f, 1f, 0.9f);         // đầu cạnh: xanh dương
             EditorGUI.DrawRect(hrect, active ? Color.yellow : col);
-            EditorGUIUtility.AddCursorRect(hrect, MouseCursor.MoveArrow);
+            EditorGUIUtility.AddCursorRect(hrect, hid == 3 ? MouseCursor.RotateArrow : MouseCursor.MoveArrow);
             var e = Event.current;
             if (e.type == EventType.MouseDown && e.button == 0 && !e.alt && hrect.Contains(e.mousePosition)) { _dragGrid = gi; _dragHandle = hid; e.Use(); }
         }
@@ -539,10 +551,21 @@ namespace Wayfu.Lamkn
                     Vector3 old = cp.vector3Value;
                     cp.vector3Value = new Vector3(nw.x, old.y, nw.z);
                 }
+                else if (_dragHandle == 3)
+                {
+                    // Handle xoay: hướng từ tâm tới chuột = hướng "sâu dần" (local +Z) của grid.
+                    Vector3 center = g.FindPropertyRelative("Center").vector3Value;
+                    Vector3 v = nw - center; v.y = 0f;
+                    if (v.sqrMagnitude > 1e-6f)
+                        g.FindPropertyRelative("Rotation").floatValue =
+                            Mathf.Repeat(Mathf.Atan2(v.x, v.z) * Mathf.Rad2Deg, 360f);
+                }
                 else
                 {
                     Vector3 center = g.FindPropertyRelative("Center").vector3Value;
                     Vector3 v = nw - center; v.y = 0f;
+                    // Quy về hệ LOCAL của grid để công thức dưới đúng cả khi grid đã xoay.
+                    v = Quaternion.Euler(0f, -g.FindPropertyRelative("Rotation").floatValue, 0f) * v;
                     if (g.FindPropertyRelative("Shape").enumValueIndex == (int)BlockGridShape.Rect)
                     {
                         // Rect: đầu cạnh đặt khoảng cách tới hàng 0 (trục Z) + số cột (trục X).
@@ -955,7 +978,7 @@ namespace Wayfu.Lamkn
             if (GUILayout.Button("+ Grid", GUILayout.Width(58))) AddGrid(grids);
             EditorGUILayout.EndHorizontal();
             if (!_foldGrids) return;
-            EditorGUILayout.HelpBox("Chọn loại grid (Arc = vòng cung, Rect = lưới chữ nhật) rồi bấm + Grid.\nKéo TÂM (hồng) + 2 ĐẦU CẠNH (xanh) trong khung giữa. Row 0 = hàng ngoài cùng gần path.\nClick ô cell = tô màu đang chọn ở Paint Color · kéo đầu mũi tên = xoay hướng cell.", MessageType.None);
+            EditorGUILayout.HelpBox("Chọn loại grid (Arc = vòng cung, Rect = lưới chữ nhật) rồi bấm + Grid.\nKhung giữa: kéo TÂM (hồng) · 2 ĐẦU CẠNH (xanh dương) · XOAY grid (xanh lá). Row 0 = hàng gần path.\nClick ô cell = tô màu đang chọn ở Paint Color · kéo đầu mũi tên = xoay hướng cell.", MessageType.None);
 
             EditorGUILayout.BeginHorizontal();
             _genColor = (BlockColor)EditorGUILayout.EnumPopup("Gen Color", _genColor);
@@ -984,6 +1007,8 @@ namespace Wayfu.Lamkn
                 bool isRect = shapeProp.enumValueIndex == (int)BlockGridShape.Rect;
                 EditorGUILayout.PropertyField(shapeProp, new GUIContent("Shape"));
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("Center"));
+                EditorGUILayout.PropertyField(grid.FindPropertyRelative("Rotation"),
+                    new GUIContent("Rotation (Y°)", "Xoay cả grid quanh trục Y. Kéo handle XANH LÁ trong khung giữa."));
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("BaseRadius"),
                     new GUIContent(isRect ? "Dist Row 0" : "Base Radius"));
@@ -1022,6 +1047,7 @@ namespace Wayfu.Lamkn
             var g = grids.GetArrayElementAtIndex(idx);
             g.FindPropertyRelative("Shape").enumValueIndex = (int)_genShape;
             g.FindPropertyRelative("Center").vector3Value = Vector3.zero;
+            g.FindPropertyRelative("Rotation").floatValue = 0f;
             g.FindPropertyRelative("BaseRadius").floatValue = 3f;
             g.FindPropertyRelative("RowSpacing").floatValue = 1.2f;
             g.FindPropertyRelative("Rows").intValue = 3;

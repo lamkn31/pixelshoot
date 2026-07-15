@@ -91,12 +91,18 @@ namespace Wayfu.Lamkn
             return t;
         }
 
+        /// <summary>Hướng "sâu dần" của grid trên sàn (local +Z sau khi xoay). Hàng 0 gần path nhất.</summary>
+        public Vector3 Forward => Quaternion.Euler(0f, Rotation, 0f) * Vector3.forward;
+
+        /// <summary>Offset local (chưa xoay) → toạ độ world: xoay quanh Y rồi dời về Center.</summary>
+        private Vector3 ToWorld(Vector3 local) => Center + Quaternion.Euler(0f, Rotation, 0f) * local;
+
         // Vị trí tâm-hàng theo s (0..1) dọc sweep — có xoắn ốc.
         private Vector3 PosAlong(int row, float s)
         {
             float angleRad = Mathf.Lerp(-ArcAngle * 0.5f, ArcAngle * 0.5f, s) * Mathf.Deg2Rad;
             float radius = BaseRadius + row * RowSpacing + s * SpiralGrowth;
-            return Center + new Vector3(Mathf.Sin(angleRad) * radius, 0f, Mathf.Cos(angleRad) * radius);
+            return ToWorld(new Vector3(Mathf.Sin(angleRad) * radius, 0f, Mathf.Cos(angleRad) * radius));
         }
 
         private float RowLength(int row)
@@ -168,7 +174,7 @@ namespace Wayfu.Lamkn
             {
                 float step = Mathf.Max(0.01f, BlockWidth + Spacing);
                 float lateral = (e - (count - 1) * 0.5f) * step; // canh giữa quanh Center
-                return Center + new Vector3(lateral, 0f, BaseRadius + row * RowSpacing);
+                return ToWorld(new Vector3(lateral, 0f, BaseRadius + row * RowSpacing));
             }
             float total = RowLength(row);
             float target = count > 1 ? e * (total / (count - 1)) : total * 0.5f;
