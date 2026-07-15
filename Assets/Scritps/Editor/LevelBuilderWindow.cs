@@ -67,6 +67,9 @@ namespace Wayfu.Lamkn
         private BlockCellType _multiType = BlockCellType.Normal;
         private int _multiStack = 3;
 
+        // Đường bo góc của path, dựng 1 lần mỗi lần vẽ (dùng chung với runtime qua BuildSamples).
+        private Vector3[] _pathSamples;
+
         // Quét chọn (marquee) + vùng click của cell/gun, gom lại trong lúc vẽ.
         private Vector2 _marqueeStart, _marqueeEnd;
         private bool _marqueeOn;
@@ -353,15 +356,34 @@ namespace Wayfu.Lamkn
             // Khung camera = 4 góc frustum cắt y=0 (đúng vùng camera nhìn trên sàn).
             if (_showFrame) DrawCameraFrame(cam, aspW, aspH, Proj, Front, Line);
 
-            // Path.
-            if (_showPath && _target.PathWaypoints != null && _target.PathWaypoints.Count >= 2)
+            // Đường bo góc dùng CHUNG với runtime; dựng 1 lần rồi cả path lẫn vòng range đều xài.
+            _pathSamples = _target.PathWaypoints != null && _target.PathWaypoints.Count >= 2
+                ? RoundedPolylinePath.BuildSamples(_target.PathWaypoints, _target.IsClosed, _target.CornerRadius)
+                : null;
+
+            // Path: vẽ ĐÚNG đường bo góc, kèm 2 mép theo PathWidth để thấy mặt đường rộng bao nhiêu.
+            if (_showPath)
             {
-                Handles.color = new Color(0.3f, 0.8f, 1f);
-                int n = _target.PathWaypoints.Count, lastSeg = _target.IsClosed ? n : n - 1;
-                for (int i = 0; i < lastSeg; i++)
+                var samples = _pathSamples;
+                if (samples != null && samples.Length >= 2)
                 {
-                    Vector3 w0 = _target.PathWaypoints[i], w1 = _target.PathWaypoints[(i + 1) % n];
-                    if (Front(w0) && Front(w1)) Line(Proj(w0), Proj(w1));
+                    float half = Mathf.Max(0f, _target.PathWidth) * 0.5f;
+                    for (int i = 1; i < samples.Length; i++)
+                    {
+                        Vector3 p0 = samples[i - 1], p1 = samples[i];
+                        if (!Front(p0) || !Front(p1)) continue;
+
+                        Handles.color = new Color(0.3f, 0.8f, 1f, 0.55f);
+                        Line(Proj(p0), Proj(p1)); // tim đường
+
+                        if (half <= 0f) continue;
+                        Vector3 dir = p1 - p0; dir.y = 0f;
+                        if (dir.sqrMagnitude < 1e-8f) continue;
+                        Vector3 side = Vector3.Cross(Vector3.up, dir.normalized) * half;
+                        Handles.color = new Color(0.3f, 0.8f, 1f, 0.95f);
+                        Line(Proj(p0 + side), Proj(p1 + side)); // mép trái
+                        Line(Proj(p0 - side), Proj(p1 - side)); // mép phải
+                    }
                 }
             }
 
@@ -425,7 +447,9 @@ namespace Wayfu.Lamkn
                             if (cell == null || cell.BlockStackCt <= 0) continue;
                             Vector3 wp = grid.CellPos(r, e);
                             if (!Front(wp)) continue;
-                            Vector2 bp = Proj(wp); float sz = PixSize(wp, 0.5f);
+                            // Kích thước vẽ = kích thước THẬT của block (prefab 1x1 × CellScale của grid).
+                            Vector2 bp = Proj(wp);
+                            float sz = PixSize(wp, Mathf.Max(0.05f, grid.CellScale.x));
                             var cellRect = new Rect(bp.x - sz / 2, bp.y - sz / 2, sz, sz);
                             int flatIdx = grid.CellIndex(r, e);
                             FillRect(cellRect, GlobalConfigManager.ColorOf(cell.Color));
@@ -1034,6 +1058,7 @@ namespace Wayfu.Lamkn
 
             EditorGUILayout.PropertyField(_so.FindProperty("IsClosed"));
             EditorGUILayout.PropertyField(_so.FindProperty("CornerRadius"));
+            EditorGUILayout.PropertyField(_so.FindProperty("PathWidth"), new GUIContent("Path Width"));
 
             var wp = _so.FindProperty("PathWaypoints");
             _foldWaypoints = EditorGUILayout.Foldout(_foldWaypoints, $"Waypoints — {wp.arraySize}", true);
@@ -1459,26 +1484,27 @@ namespace Wayfu.Lamkn
             return list;
         }
 
+        // Điểm trên path theo arc-length — chạy trên ĐƯỜNG BO GÓC (_pathSamples) đúng như runtime, không
+        // phải đoạn thẳng nối waypoint. Wrap khoảng cách bất kể IsClosed, khớp GetPointAtDistance.
         private Vector3 PathPointAt(float dist)
         {
-            var wp = _target.PathWaypoints;
-            int n = wp.Count;
-            if (n == 0) return Vector3.zero;
-            if (n == 1) return wp[0];
-            int segs = _target.IsClosed ? n : n - 1;
+            var s = _pathSamples;
+            if (s == null || s.Length == 0) return Vector3.zero;
+            if (s.Length == 1) return s[0];
+
             float total = 0f;
-            for (int i = 0; i < segs; i++) total += Vector3.Distance(wp[i], wp[(i + 1) % n]);
-            if (total < 1e-4f) return wp[0];
-            dist = _target.IsClosed ? Mathf.Repeat(dist, total) : Mathf.Clamp(dist, 0f, total);
+            for (int i = 1; i < s.Length; i++) total += Vector3.Distance(s[i - 1], s[i]);
+            if (total < 1e-4f) return s[0];
+
+            dist = Mathf.Repeat(dist, total);
             float acc = 0f;
-            for (int i = 0; i < segs; i++)
+            for (int i = 1; i < s.Length; i++)
             {
-                Vector3 a = wp[i], b = wp[(i + 1) % n];
-                float len = Vector3.Distance(a, b);
-                if (acc + len >= dist) return Vector3.Lerp(a, b, len > 1e-4f ? (dist - acc) / len : 0f);
+                float len = Vector3.Distance(s[i - 1], s[i]);
+                if (acc + len >= dist) return Vector3.Lerp(s[i - 1], s[i], len > 1e-4f ? (dist - acc) / len : 0f);
                 acc += len;
             }
-            return wp[_target.IsClosed ? 0 : n - 1];
+            return s[s.Length - 1];
         }
 
         private static bool ClipSegment(ref Vector2 a, ref Vector2 b, Rect r)

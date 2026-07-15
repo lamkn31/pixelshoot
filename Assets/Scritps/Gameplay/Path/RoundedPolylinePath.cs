@@ -28,9 +28,35 @@ public class RoundedPolylinePath : MonoBehaviour
     {
         if (waypoints == null || waypoints.Count < 2) return;
 
-        int n = waypoints.Count;
-        Vector3[] wpPositions = new Vector3[n];
-        for (int i = 0; i < n; i++) wpPositions[i] = waypoints[i].position;
+        var wp = new Vector3[waypoints.Count];
+        for (int i = 0; i < waypoints.Count; i++)
+        {
+            if (waypoints[i] == null) return;
+            wp[i] = waypoints[i].position;
+        }
+
+        samples = BuildSamples(wp, isClosed, cornerRadius, curveSamples);
+        if (samples == null) return;
+
+        sampleArc = new float[samples.Length];
+        float acc = 0f;
+        for (int i = 1; i < samples.Length; i++)
+        {
+            acc += Vector3.Distance(samples[i - 1], samples[i]);
+            sampleArc[i] = acc;
+        }
+        TotalLength = acc;
+    }
+
+    /// <summary>
+    /// Dựng chuỗi điểm của đường BO GÓC từ danh sách waypoint. Tách static để Level Tool vẽ được ĐÚNG
+    /// đường cong như runtime — một nguồn duy nhất, không vẽ xấp xỉ bằng đoạn thẳng nối waypoint.
+    /// </summary>
+    public static Vector3[] BuildSamples(IList<Vector3> wpPositions, bool isClosed, float cornerRadius,
+                                         int curveSamples = 8)
+    {
+        int n = wpPositions != null ? wpPositions.Count : 0;
+        if (n < 2) return null;
 
         var pts = new List<Vector3>(n * (curveSamples + 2));
 
@@ -101,16 +127,7 @@ public class RoundedPolylinePath : MonoBehaviour
         }
 
         if (isClosed) pts.Add(pts[0]); else pts.Add(wpPositions[n - 1]);
-
-        samples = pts.ToArray();
-        sampleArc = new float[samples.Length];
-        float acc = 0f;
-        for (int i = 1; i < samples.Length; i++)
-        {
-            acc += Vector3.Distance(samples[i - 1], samples[i]);
-            sampleArc[i] = acc;
-        }
-        TotalLength = acc;
+        return pts.ToArray();
     }
 
     // Hàm lấy vị trí dựa trên khoảng cách tuyệt đối (distance) chạy trên đường thay vì dùng biến t (0->1) chung chung

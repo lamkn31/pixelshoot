@@ -1,0 +1,40 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 21b4429a5846abd4b99ca05c60e3832b, type: 3}
+  m_Name: Level2
+  m_EditorClassIdentifier: 
+  CurGameDifficulty: 0
+  SkipLevelLoop: 0
+  NumberOfColors: 0
+  MechanicNames: []
+  PathWaypoints:
+  - {x: -5.059201, y: 0, z: 15.704863}
+  - {x: -1.9978398, y: 0, z: 8.113637}
+  - {x: 2.6640646, y: 0, z: 10.490791}
+  - {x: 2.2081966, y: 0, z: 16.36667}
+  IsClosed: 1
+  CornerRadius: 1
+  Slots:
+  - Guns:
+    - Color: 1
+      CountBullet: 5
+  HoleCapacity: 3
+  Grids: []
+  CameraOrthoSize: 9
+  ScreenAspect: {x: 9, y: 16}
+  CameraCenter: {x: 0, y: 0, z: 0}
+  BoardProps: []
+  Obstacles: []
+  GunPrefab: {fileID: 0}
+  BlockCellPrefab: {fileID: 0}
+  BlockPrefab: {fileID: 0}
+  BulletPrefab: {fileID: 0}

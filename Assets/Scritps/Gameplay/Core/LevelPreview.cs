@@ -32,16 +32,26 @@ namespace Wayfu.Lamkn
 
             if (drawPath && level.PathWaypoints != null && level.PathWaypoints.Count >= 2)
             {
-                Gizmos.color = Color.cyan;
-                int n = level.PathWaypoints.Count;
-                int last = level.IsClosed ? n : n - 1;
-                for (int i = 0; i < last; i++)
+                // Vẽ ĐÚNG đường bo góc như runtime + 2 mép theo PathWidth.
+                var s = RoundedPolylinePath.BuildSamples(level.PathWaypoints, level.IsClosed, level.CornerRadius);
+                if (s != null)
                 {
-                    Vector3 a = level.PathWaypoints[i];
-                    Vector3 b = level.PathWaypoints[(i + 1) % n];
-                    Gizmos.DrawLine(a, b);
-                    Gizmos.DrawWireSphere(a, 0.15f);
+                    float half = Mathf.Max(0f, level.PathWidth) * 0.5f;
+                    for (int i = 1; i < s.Length; i++)
+                    {
+                        Gizmos.color = Color.cyan;
+                        Gizmos.DrawLine(s[i - 1], s[i]);
+                        if (half <= 0f) continue;
+                        Vector3 dir = s[i] - s[i - 1]; dir.y = 0f;
+                        if (dir.sqrMagnitude < 1e-8f) continue;
+                        Vector3 side = Vector3.Cross(Vector3.up, dir.normalized) * half;
+                        Gizmos.color = new Color(0f, 0.8f, 1f);
+                        Gizmos.DrawLine(s[i - 1] + side, s[i] + side);
+                        Gizmos.DrawLine(s[i - 1] - side, s[i] - side);
+                    }
                 }
+                Gizmos.color = Color.red;
+                foreach (var w in level.PathWaypoints) Gizmos.DrawWireSphere(w, 0.15f);
             }
 
             if (drawBlocks && level.Grids != null)

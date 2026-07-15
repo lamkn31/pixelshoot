@@ -32,8 +32,7 @@ namespace Wayfu.Lamkn
             PoolManager.Instance.Init(levelData); // set prefab + trả hết item cũ về pool
             ClearAll();
 
-            var path = BuildPath(levelData);
-            PathManager.Instance.Init(path);
+            PathManager.Instance.Build(levelData); // tự dựng RoundedPolylinePath + mặt đường
             GridBlockManager.Instance.Build(levelData);
             SlotManager.Instance.Build(levelData);
             SpawnBoardProps(levelData);
@@ -81,24 +80,5 @@ namespace Wayfu.Lamkn
                 new GameObject(typeof(T).Name).AddComponent<T>();
         }
 
-        private RoundedPolylinePath BuildPath(LevelData level)
-        {
-            var go = new GameObject("GunPath");
-            var path = go.AddComponent<RoundedPolylinePath>();
-            path.isClosed = level.IsClosed;
-            path.cornerRadius = level.CornerRadius;
-            path.waypoints = new List<Transform>();
-
-            for (int i = 0; i < level.PathWaypoints.Count; i++)
-            {
-                var wp = new GameObject("WP_" + i).transform;
-                wp.SetParent(go.transform);
-                wp.position = level.PathWaypoints[i];
-                path.waypoints.Add(wp);
-            }
-
-            path.GeneratePath();
-            return path;
-        }
     }
 }

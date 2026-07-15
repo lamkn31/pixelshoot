@@ -21,6 +21,7 @@ MonoBehaviour:
   - {x: 0, y: 0, z: 30}
   IsClosed: 0
   CornerRadius: 3
+  PathWidth: 1.5
   Slots:
   - Guns:
     - Color: 2
@@ -30,7 +31,7 @@ MonoBehaviour:
     - Color: 3
       CountBullet: 60
     - Color: 1
-      CountBullet: 45
+      CountBullet: 21
   - Guns:
     - Color: 3
       CountBullet: 60
@@ -38,8 +39,6 @@ MonoBehaviour:
       CountBullet: 60
     - Color: 2
       CountBullet: 60
-    - Color: 1
-      CountBullet: 21
   HoleCapacity: 3
   Grids:
   - Shape: 1
@@ -1721,157 +1720,6 @@ MonoBehaviour:
       - Color: 1
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 117.34018
-    PendingRefill: []
-  - Shape: 1
-    Center: {x: -3.339551, y: 0, z: 7.490529}
-    Rotation: 270
-    BaseRadius: 0
-    Columns: 5
-    RowSpacing: 0.5
-    Rows: 3
-    ArcAngle: 90
-    SpiralGrowth: 0
-    BlockWidth: 0
-    Spacing: 0.5
-    CellScale: {x: 0.5, y: 0.5, z: 0.5}
-    StackSpacing: 0.5
-    Layout: 0
-    Cells:
-    - Color: 1
-      CellPos: {x: 0, y: 0, z: 0}
-      CellScale: {x: 1, y: 1, z: 1}
-      BlockCol: 0
-      SpawnerDepth: 0
-      BlockStackCt: 3
-      Type: 0
-      Queue: []
-      SpawnerDirectionAngleZ: 146.30994
-    - Color: 1
-      CellPos: {x: 0, y: 0, z: 0}
-      CellScale: {x: 1, y: 1, z: 1}
-      BlockCol: 1
-      SpawnerDepth: 0
-      BlockStackCt: 3
-      Type: 0
-      Queue: []
-      SpawnerDirectionAngleZ: 161.56505
-    - Color: 1
-      CellPos: {x: 0, y: 0, z: 0}
-      CellScale: {x: 1, y: 1, z: 1}
-      BlockCol: 2
-      SpawnerDepth: 0
-      BlockStackCt: 3
-      Type: 0
-      Queue: []
-      SpawnerDirectionAngleZ: 180
-    - Color: 1
-      CellPos: {x: 0, y: 0, z: 0}
-      CellScale: {x: 1, y: 1, z: 1}
-      BlockCol: 3
-      SpawnerDepth: 0
-      BlockStackCt: 3
-      Type: 0
-      Queue: []
-      SpawnerDirectionAngleZ: 198.43495
-    - Color: 1
-      CellPos: {x: 0, y: 0, z: 0}
-      CellScale: {x: 1, y: 1, z: 1}
-      BlockCol: 4
-      SpawnerDepth: 0
-      BlockStackCt: 3
-      Type: 0
-      Queue: []
-      SpawnerDirectionAngleZ: 213.69006
-    - Color: 1
-      CellPos: {x: 0, y: 0, z: 0}
-      CellScale: {x: 1, y: 1, z: 1}
-      BlockCol: 0
-      SpawnerDepth: 1
-      BlockStackCt: 3
-      Type: 0
-      Queue: []
-      SpawnerDirectionAngleZ: 154.53665
-    - Color: 1
-      CellPos: {x: 0, y: 0, z: 0}
-      CellScale: {x: 1, y: 1, z: 1}
-      BlockCol: 1
-      SpawnerDepth: 1
-      BlockStackCt: 3
-      Type: 0
-      Queue: []
-      SpawnerDirectionAngleZ: 166.60751
-    - Color: 1
-      CellPos: {x: 0, y: 0, z: 0}
-      CellScale: {x: 1, y: 1, z: 1}
-      BlockCol: 2
-      SpawnerDepth: 1
-      BlockStackCt: 3
-      Type: 0
-      Queue: []
-      SpawnerDirectionAngleZ: 180
-    - Color: 1
-      CellPos: {x: 0, y: 0, z: 0}
-      CellScale: {x: 1, y: 1, z: 1}
-      BlockCol: 3
-      SpawnerDepth: 1
-      BlockStackCt: 3
-      Type: 0
-      Queue: []
-      SpawnerDirectionAngleZ: 193.39249
-    - Color: 1
-      CellPos: {x: 0, y: 0, z: 0}
-      CellScale: {x: 1, y: 1, z: 1}
-      BlockCol: 4
-      SpawnerDepth: 1
-      BlockStackCt: 3
-      Type: 0
-      Queue: []
-      SpawnerDirectionAngleZ: 205.46335
-    - Color: 1
-      CellPos: {x: 0, y: 0, z: 0}
-      CellScale: {x: 1, y: 1, z: 1}
-      BlockCol: 0
-      SpawnerDepth: 2
-      BlockStackCt: 3
-      Type: 0
-      Queue: []
-      SpawnerDirectionAngleZ: 159.67686
-    - Color: 1
-      CellPos: {x: 0, y: 0, z: 0}
-      CellScale: {x: 1, y: 1, z: 1}
-      BlockCol: 1
-      SpawnerDepth: 2
-      BlockStackCt: 3
-      Type: 0
-      Queue: []
-      SpawnerDirectionAngleZ: 169.50853
-    - Color: 1
-      CellPos: {x: 0, y: 0, z: 0}
-      CellScale: {x: 1, y: 1, z: 1}
-      BlockCol: 2
-      SpawnerDepth: 2
-      BlockStackCt: 3
-      Type: 0
-      Queue: []
-      SpawnerDirectionAngleZ: 180
-    - Color: 1
-      CellPos: {x: 0, y: 0, z: 0}
-      CellScale: {x: 1, y: 1, z: 1}
-      BlockCol: 3
-      SpawnerDepth: 2
-      BlockStackCt: 3
-      Type: 0
-      Queue: []
-      SpawnerDirectionAngleZ: 190.49147
-    - Color: 1
-      CellPos: {x: 0, y: 0, z: 0}
-      CellScale: {x: 1, y: 1, z: 1}
-      BlockCol: 4
-      SpawnerDepth: 2
-      BlockStackCt: 3
-      Type: 0
-      Queue: []
-      SpawnerDirectionAngleZ: 200.32314
     PendingRefill: []
   CameraOrthoSize: 9
   ScreenAspect: {x: 0.5625, y: 1}

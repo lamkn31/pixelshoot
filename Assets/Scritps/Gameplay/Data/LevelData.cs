@@ -22,6 +22,8 @@ namespace Wayfu.Lamkn
         public List<Vector3> PathWaypoints = new List<Vector3>();
         public bool IsClosed = true;
         public float CornerRadius = 1f;
+        [Tooltip("Độ rộng mặt đường (world units) — LineRenderer của PathManager và preview trong Level Tool.")]
+        [Min(0f)] public float PathWidth = 1.5f;
 
         [Header("Slots (số hàng gun + thứ tự gun ra)")]
         public List<SlotData> Slots = new List<SlotData>();
