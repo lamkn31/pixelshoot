@@ -16,7 +16,7 @@ namespace Wayfu.Lamkn
         [Tooltip("Bật khi cell đang nằm ở Ô GỐC của Spawner (child 'BlocksSpawnerIndicator').")]
         [SerializeField] private GameObject spawnerIndicator;
 
-        public BlockColor Color { get; private set; }
+        public TypeColor Color { get; private set; }
         public int BlockCol { get; private set; }
         public int Depth { get; private set; }
 
@@ -57,7 +57,7 @@ namespace Wayfu.Lamkn
         }
 
         // Dựng stack block cùng màu, gắn vào BlocksContainer của prefab (fallback: chính cell).
-        private void Fill(BlockColor color, int n)
+        private void Fill(TypeColor color, int n)
         {
             Color = color;
             var parent = blocksContainer != null ? blocksContainer : transform;

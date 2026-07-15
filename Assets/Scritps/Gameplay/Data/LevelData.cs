@@ -51,9 +51,9 @@ namespace Wayfu.Lamkn
         public Bullet BulletPrefab;
 
         /// <summary>Tổng số bullet theo màu (gộp toàn bộ gun trong mọi slot).</summary>
-        public Dictionary<BlockColor, int> TotalBullets()
+        public Dictionary<TypeColor, int> TotalBullets()
         {
-            var d = new Dictionary<BlockColor, int>();
+            var d = new Dictionary<TypeColor, int>();
             foreach (var s in Slots)
             {
                 if (s?.Guns == null) continue;
@@ -68,9 +68,9 @@ namespace Wayfu.Lamkn
         }
 
         /// <summary>Tổng số block theo màu (gộp BlockStackCt của mọi cell trong mọi grid).</summary>
-        public Dictionary<BlockColor, int> TotalBlocks()
+        public Dictionary<TypeColor, int> TotalBlocks()
         {
-            var d = new Dictionary<BlockColor, int>();
+            var d = new Dictionary<TypeColor, int>();
             foreach (var grid in Grids)
             {
                 if (grid == null) continue;
@@ -110,7 +110,7 @@ namespace Wayfu.Lamkn
             var bullets = TotalBullets();
             var blocks = TotalBlocks();
 
-            var colors = new HashSet<BlockColor>();
+            var colors = new HashSet<TypeColor>();
             foreach (var k in bullets.Keys) colors.Add(k);
             foreach (var k in blocks.Keys) colors.Add(k);
 

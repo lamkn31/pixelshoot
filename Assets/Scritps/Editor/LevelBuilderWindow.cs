@@ -51,19 +51,40 @@ namespace Wayfu.Lamkn
         private Vector3 _dragCellCenter;
 
         // Generate grid.
-        private BlockColor _genColor = BlockColor.Red;
+        private TypeColor _genColor = TypeColor.Red;
         private int _genStack = 3;
         private BlockGridShape _genShape = BlockGridShape.Arc; // loại grid khi bấm "+ Grid"
 
-        // Bảng màu tô cell bằng click trong khung giữa. -1 = None → click để CHỌN xem/sửa thông số.
-        private int _paintColorIdx = -1;
+        // Màu tô cell bằng click trong khung giữa. None → click để CHỌN xem/sửa thông số.
+        private TypeColor _paintColor = TypeColor.None;
 
-        // Đối tượng đang chọn trong khung giữa (chỉ khi Paint = None). -1 = không chọn.
-        private int _selGrid = -1, _selCell = -1;   // cell
-        private int _selSlot = -1, _selGun = -1;    // gun
+        // Đối tượng đang chọn trong khung giữa (chỉ khi Paint = None).
+        private readonly List<(int grid, int cell)> _selCells = new List<(int, int)>();
+        private int _selSlot = -1, _selGun = -1;    // gun (chọn 1)
 
-        private void SelectCell(int gi, int flat) { _selGrid = gi; _selCell = flat; _selSlot = -1; _selGun = -1; }
-        private void SelectGun(int si, int gi) { _selSlot = si; _selGun = gi; _selGrid = -1; _selCell = -1; }
+        // Giá trị áp dụng CHUNG cho nhiều cell đang chọn.
+        private TypeColor _multiColor = TypeColor.Red;
+        private BlockCellType _multiType = BlockCellType.Normal;
+        private int _multiStack = 3;
+
+        // Quét chọn (marquee) + vùng click của cell/gun, gom lại trong lúc vẽ.
+        private Vector2 _marqueeStart, _marqueeEnd;
+        private bool _marqueeOn;
+        private readonly List<(Rect rect, int grid, int flat)> _hitCells = new List<(Rect, int, int)>();
+        private readonly List<(Rect rect, int slot, int gun)> _hitGuns = new List<(Rect, int, int)>();
+
+        private bool IsCellSelected(int gi, int flat) => _selCells.Contains((gi, flat));
+
+        private void SelectGun(int si, int gi) { _selSlot = si; _selGun = gi; _selCells.Clear(); }
+
+        // Ctrl/Cmd = chọn thêm (bấm lại thì bỏ chọn).
+        private void ToggleCell(int gi, int flat, bool additive)
+        {
+            _selSlot = -1; _selGun = -1;
+            var key = (gi, flat);
+            if (!additive) { _selCells.Clear(); _selCells.Add(key); return; }
+            if (!_selCells.Remove(key)) _selCells.Add(key);
+        }
 
         // Foldout: thu gọn từng nhóm cho panel phải ngắn lại (chỉ GRIDS mở sẵn).
         private bool _foldMeta, _foldPath, _foldPrefabs, _foldWaypoints, _foldSlots, _foldGrids = true;
@@ -368,9 +389,10 @@ namespace Wayfu.Lamkn
                 var blockLbl = new GUIStyle(EditorStyles.miniBoldLabel) { alignment = TextAnchor.MiddleCenter };
                 blockLbl.normal.textColor = Color.white;
 
-                // Thu vùng click khi có MouseDown (dùng cho cả tô màu lẫn chọn cell).
-                bool collectHits = Event.current.type == EventType.MouseDown;
+                // Thu vùng click khi có MouseDown/MouseUp (tô màu dùng MouseDown; quét chọn chốt ở MouseUp).
+                bool collectHits = Event.current.type == EventType.MouseDown || Event.current.type == EventType.MouseUp;
                 List<(Rect rect, int flat)> cellHits = collectHits ? new List<(Rect, int)>() : null;
+                if (collectHits) _hitCells.Clear();
 
                 for (int gi = 0; gi < _target.Grids.Count; gi++)
                 {
@@ -405,10 +427,11 @@ namespace Wayfu.Lamkn
                             Vector2 bp = Proj(wp); float sz = PixSize(wp, 0.5f);
                             var cellRect = new Rect(bp.x - sz / 2, bp.y - sz / 2, sz, sz);
                             int flatIdx = grid.CellIndex(r, e);
-                            FillRect(cellRect, BlockColorPalette.ToColor(cell.Color));
+                            FillRect(cellRect, GlobalConfigManager.ColorOf(cell.Color));
                             cellHits?.Add((cellRect, flatIdx));
+                            if (collectHits) _hitCells.Add((cellRect, gi, flatIdx));
                             // Viền vàng = cell đang chọn; viền cam = cell Spawner (còn hàng đợi phía sau).
-                            if (_selGrid == gi && _selCell == flatIdx) DrawOutline(cellRect, Color.yellow, area);
+                            if (IsCellSelected(gi, flatIdx)) DrawOutline(cellRect, Color.yellow, area);
                             else if (cell.Type == BlockCellType.Spawner) DrawOutline(cellRect, new Color(1f, 0.6f, 0.1f), area);
                             // Số block trong stack (giống nhãn số đạn của gun).
                             if (sz >= 10f && area.Contains(bp))
@@ -455,6 +478,7 @@ namespace Wayfu.Lamkn
             if (_showSlots && _target.Slots != null)
             {
                 var sceneSlots = GetSceneSlots();
+                if (Event.current.type == EventType.MouseDown || Event.current.type == EventType.MouseUp) _hitGuns.Clear();
                 float spacing = GameSettings.Instance != null ? GameSettings.Instance.SlotGunSpacing : 1f;
                 var lbl = new GUIStyle(EditorStyles.miniBoldLabel) { alignment = TextAnchor.MiddleCenter };
                 lbl.normal.textColor = Color.white;
@@ -470,22 +494,89 @@ namespace Wayfu.Lamkn
                         if (!Front(wp)) continue;
                         Vector2 gp = Proj(wp); float sz = PixSize(wp, 0.6f);
                         var gunRect = new Rect(gp.x - sz / 2, gp.y - sz / 2, sz, sz);
-                        FillRect(gunRect, BlockColorPalette.ToColor(g.Color));
+                        FillRect(gunRect, GlobalConfigManager.ColorOf(g.Color));
                         if (area.Contains(gp)) GUI.Label(gunRect, g.CountBullet.ToString(), lbl);
                         if (_selSlot == si && _selGun == i) DrawOutline(gunRect, Color.yellow, area);
-                        // Paint = None → click gun để xem/sửa số đạn + màu ở panel phải.
-                        if (_paintColorIdx < 0)
-                        {
-                            var ev = Event.current;
-                            if (ev.type == EventType.MouseDown && ev.button == 0 && !ev.alt
-                                && area.Contains(ev.mousePosition) && gunRect.Contains(ev.mousePosition))
-                            { SelectGun(si, i); ev.Use(); Repaint(); }
-                        }
+                        // Vùng click gun — chọn xử lý ở HandleMarquee (click ngắn = chọn 1 gun).
+                        if (Event.current.type == EventType.MouseDown || Event.current.type == EventType.MouseUp)
+                            _hitGuns.Add((gunRect, si, i));
                     }
                 }
             }
 
+            // Cuối cùng: quét chọn / click chọn. Đặt sau mọi handle nên nếu handle đã e.Use() thì bỏ qua.
+            HandleMarquee(area);
+
             if (_camMode) cam.ResetAspect();
+        }
+
+        // Paint = None: kéo chuột = QUÉT chọn nhiều cell; click ngắn = chọn 1 cell/gun.
+        // Giữ Ctrl (hoặc Cmd) = chọn THÊM (click lại vào cell đã chọn thì bỏ chọn).
+        private void HandleMarquee(Rect area)
+        {
+            if (_paintColor != TypeColor.None) return; // đang tô màu → không quét chọn
+            var e = Event.current;
+            switch (e.type)
+            {
+                case EventType.MouseDown:
+                    if (e.button != 0 || e.alt || !area.Contains(e.mousePosition)) break;
+                    _marqueeStart = _marqueeEnd = e.mousePosition;
+                    _marqueeOn = true;
+                    e.Use();
+                    break;
+
+                case EventType.MouseDrag:
+                    if (!_marqueeOn) break;
+                    _marqueeEnd = e.mousePosition;
+                    e.Use(); Repaint();
+                    break;
+
+                case EventType.MouseUp:
+                    if (!_marqueeOn) break;
+                    _marqueeOn = false;
+                    _marqueeEnd = e.mousePosition;
+                    bool additive = e.control || e.command;
+                    var r = MarqueeRect();
+                    if (r.width < 3f && r.height < 3f) ClickSelect(e.mousePosition, additive);
+                    else RectSelect(r, additive);
+                    e.Use(); Repaint();
+                    break;
+
+                case EventType.Repaint:
+                    if (!_marqueeOn) break;
+                    var mr = MarqueeRect();
+                    EditorGUI.DrawRect(RectIntersect(mr, area), new Color(0.3f, 0.7f, 1f, 0.15f));
+                    DrawOutline(mr, new Color(0.4f, 0.8f, 1f, 0.9f), area);
+                    break;
+            }
+        }
+
+        private Rect MarqueeRect()
+        {
+            float x = Mathf.Min(_marqueeStart.x, _marqueeEnd.x), y = Mathf.Min(_marqueeStart.y, _marqueeEnd.y);
+            return new Rect(x, y, Mathf.Abs(_marqueeEnd.x - _marqueeStart.x), Mathf.Abs(_marqueeEnd.y - _marqueeStart.y));
+        }
+
+        private void ClickSelect(Vector2 pos, bool additive)
+        {
+            foreach (var h in _hitCells)
+                if (h.rect.Contains(pos)) { ToggleCell(h.grid, h.flat, additive); return; }
+            foreach (var h in _hitGuns)
+                if (h.rect.Contains(pos)) { SelectGun(h.slot, h.gun); return; }
+            if (!additive) { _selCells.Clear(); _selSlot = -1; _selGun = -1; } // click ra chỗ trống = bỏ chọn
+        }
+
+        // Quét: mọi cell có ô GIAO với vùng quét đều được chọn.
+        private void RectSelect(Rect r, bool additive)
+        {
+            if (!additive) _selCells.Clear();
+            _selSlot = -1; _selGun = -1;
+            foreach (var h in _hitCells)
+            {
+                var ir = RectIntersect(h.rect, r);
+                if (ir.width <= 0f || ir.height <= 0f) continue;
+                if (!_selCells.Contains((h.grid, h.flat))) _selCells.Add((h.grid, h.flat));
+            }
         }
 
         // Vẽ khung camera bằng 4 góc viewport chiếu ray xuống y=0.
@@ -613,10 +704,11 @@ namespace Wayfu.Lamkn
             }
         }
 
-        // Click trái vào ô cell: có màu ở Paint Color → tô màu đó; Paint = None → CHỌN cell để xem/sửa
-        // thông số (màu, stack, type, hàng đợi) ở panel phải.
+        // Click trái vào ô cell khi Paint Color != None → tô cell đó. Paint = None thì không đụng vào,
+        // để HandleMarquee lo việc click-chọn / quét chọn.
         private void PaintCellClick(int gi, List<(Rect rect, int flat)> hits, Rect area)
         {
+            if (_paintColor == TypeColor.None) return;
             var e = Event.current;
             if (e.type != EventType.MouseDown || e.button != 0 || e.alt || !area.Contains(e.mousePosition)) return;
             var grids = _so.FindProperty("Grids");
@@ -627,10 +719,7 @@ namespace Wayfu.Lamkn
                 if (!hits[i].rect.Contains(e.mousePosition)) continue;
                 int flat = hits[i].flat;
                 if (flat < 0 || flat >= cells.arraySize) return;
-                if (_paintColorIdx >= 0)
-                    cells.GetArrayElementAtIndex(flat).FindPropertyRelative("Color").enumValueIndex = _paintColorIdx;
-                else
-                    SelectCell(gi, flat);
+                cells.GetArrayElementAtIndex(flat).FindPropertyRelative("Color").enumValueIndex = (int)_paintColor;
                 e.Use(); Repaint();
                 return;
             }
@@ -792,10 +881,54 @@ namespace Wayfu.Lamkn
         // Thông số của gun/cell đang click chọn trong khung giữa (chỉ hiện khi Paint Color = None).
         private void DrawSelectionSection()
         {
-            if (_selGun >= 0) DrawSelectedGun();
-            else if (_selCell >= 0) DrawSelectedCell();
-            else if (_paintColorIdx < 0)
-                EditorGUILayout.HelpBox("Paint Color = None → click 1 GUN hoặc 1 CELL trong khung giữa để xem/sửa thông số.", MessageType.None);
+            if (_selGun >= 0) { DrawSelectedGun(); return; }
+            if (_selCells.Count == 1) { DrawSelectedCell(_selCells[0].grid, _selCells[0].cell); return; }
+            if (_selCells.Count > 1) { DrawMultiCellEdit(); return; }
+            if (_paintColor == TypeColor.None)
+                EditorGUILayout.HelpBox("Paint = None → click chọn 1 GUN/CELL · KÉO để quét chọn nhiều cell · giữ CTRL để chọn thêm.", MessageType.None);
+        }
+
+        // Đặt giá trị CHUNG cho tất cả cell đang quét chọn.
+        private void DrawMultiCellEdit()
+        {
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField($"CELLS — đang chọn {_selCells.Count} ô", EditorStyles.boldLabel);
+            if (GUILayout.Button("✕", BtnW)) _selCells.Clear();
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.HelpBox("Bấm Áp dụng để set giá trị chung cho toàn bộ ô đang chọn.", MessageType.None);
+
+            EditorGUILayout.BeginHorizontal();
+            _multiColor = (TypeColor)EditorGUILayout.EnumPopup("Màu", _multiColor);
+            if (GUILayout.Button("Áp dụng", GUILayout.Width(70))) ApplyToSelected("Color", (int)_multiColor);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            _multiType = (BlockCellType)EditorGUILayout.EnumPopup("Type", _multiType);
+            if (GUILayout.Button("Áp dụng", GUILayout.Width(70))) ApplyToSelected("Type", (int)_multiType);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            _multiStack = Mathf.Max(1, EditorGUILayout.IntField("Stack", _multiStack));
+            if (GUILayout.Button("Áp dụng", GUILayout.Width(70))) ApplyToSelected("BlockStackCt", _multiStack);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void ApplyToSelected(string propName, int value)
+        {
+            var grids = _so.FindProperty("Grids");
+            foreach (var (gi, ci) in _selCells)
+            {
+                if (gi < 0 || gi >= grids.arraySize) continue;
+                var cells = grids.GetArrayElementAtIndex(gi).FindPropertyRelative("Cells");
+                if (ci < 0 || ci >= cells.arraySize) continue;
+                var p = cells.GetArrayElementAtIndex(ci).FindPropertyRelative(propName);
+                if (p == null) continue;
+                if (p.propertyType == SerializedPropertyType.Enum) p.enumValueIndex = value;
+                else p.intValue = value;
+            }
         }
 
         private void DrawSelectedGun()
@@ -817,20 +950,20 @@ namespace Wayfu.Lamkn
             EditorGUILayout.EndVertical();
         }
 
-        private void DrawSelectedCell()
+        private void DrawSelectedCell(int gridIdx, int cellIdx)
         {
             var grids = _so.FindProperty("Grids");
-            if (_selGrid < 0 || _selGrid >= grids.arraySize) { _selCell = -1; return; }
-            var cells = grids.GetArrayElementAtIndex(_selGrid).FindPropertyRelative("Cells");
-            if (_selCell >= cells.arraySize) { _selCell = -1; return; }
+            if (gridIdx < 0 || gridIdx >= grids.arraySize) { _selCells.Clear(); return; }
+            var cells = grids.GetArrayElementAtIndex(gridIdx).FindPropertyRelative("Cells");
+            if (cellIdx < 0 || cellIdx >= cells.arraySize) { _selCells.Clear(); return; }
 
             EditorGUILayout.BeginVertical("box");
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField($"CELL — Grid {_selGrid} · #{_selCell}", EditorStyles.boldLabel);
-            if (GUILayout.Button("✕", BtnW)) { _selCell = -1; _selGrid = -1; }
+            EditorGUILayout.LabelField($"CELL — Grid {gridIdx} · #{cellIdx}", EditorStyles.boldLabel);
+            if (GUILayout.Button("✕", BtnW)) _selCells.Clear();
             EditorGUILayout.EndHorizontal();
 
-            var c = cells.GetArrayElementAtIndex(_selCell);
+            var c = cells.GetArrayElementAtIndex(cellIdx);
             EditorGUILayout.PropertyField(c.FindPropertyRelative("Color"), new GUIContent("Màu"));
             EditorGUILayout.PropertyField(c.FindPropertyRelative("BlockStackCt"), new GUIContent("Stack"));
 
@@ -870,7 +1003,7 @@ namespace Wayfu.Lamkn
             if (GUILayout.Button("+ Cell sau"))
             {
                 var e = q.GetArrayElementAtIndex(AddArray(q));
-                e.FindPropertyRelative("Color").enumValueIndex = _paintColorIdx >= 0 ? _paintColorIdx : (int)_genColor;
+                e.FindPropertyRelative("Color").enumValueIndex = _paintColor != TypeColor.None ? (int)_paintColor : (int)_genColor;
                 e.FindPropertyRelative("BlockStackCt").intValue = Mathf.Max(1, _target.HoleCapacity);
             }
             if (GUILayout.Button("Clear")) q.arraySize = 0;
@@ -981,7 +1114,7 @@ namespace Wayfu.Lamkn
             EditorGUILayout.HelpBox("Chọn loại grid (Arc = vòng cung, Rect = lưới chữ nhật) rồi bấm + Grid.\nKhung giữa: kéo TÂM (hồng) · 2 ĐẦU CẠNH (xanh dương) · XOAY grid (xanh lá). Row 0 = hàng gần path.\nClick ô cell = tô màu đang chọn ở Paint Color · kéo đầu mũi tên = xoay hướng cell.", MessageType.None);
 
             EditorGUILayout.BeginHorizontal();
-            _genColor = (BlockColor)EditorGUILayout.EnumPopup("Gen Color", _genColor);
+            _genColor = (TypeColor)EditorGUILayout.EnumPopup("Gen Color", _genColor);
             _genStack = Mathf.Max(1, EditorGUILayout.IntField(new GUIContent("Refill Stack", "Stack cho hàng đợi Refill (Generate Cells dùng Hole Capacity)."), _genStack, GUILayout.Width(120)));
             EditorGUILayout.EndHorizontal();
 
@@ -1120,30 +1253,37 @@ namespace Wayfu.Lamkn
             }
         }
 
-        // Bảng màu tô cell: None (mặc định) = click cell không đổi gì. Chọn 1 màu → click cell trong khung
-        // giữa sẽ tô cell đó thành màu đang chọn.
+        // Bảng màu tô cell: None (mặc định) = click cell để chọn/xem thông số. Chọn 1 màu → click cell trong
+        // khung giữa sẽ tô cell đó. Danh sách màu lấy từ GlobalConfigManager (chỉ hiện màu đã cấu hình).
         private void DrawPaintPalette()
         {
+            var cfg = GlobalConfigManager.Instance;
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("Paint Color", GUILayout.Width(72));
-            if (GUILayout.Toggle(_paintColorIdx < 0, "None", EditorStyles.miniButton, GUILayout.Width(44)))
-                _paintColorIdx = -1;
+            if (GUILayout.Toggle(_paintColor == TypeColor.None, "None", EditorStyles.miniButton, GUILayout.Width(44)))
+                _paintColor = TypeColor.None;
 
-            int count = System.Enum.GetValues(typeof(BlockColor)).Length;
             var bg = GUI.backgroundColor;
-            for (int i = 0; i < count; i++)
-            {
-                bool sel = _paintColorIdx == i;
-                GUI.backgroundColor = BlockColorPalette.ToColor((BlockColor)i);
-                if (GUILayout.Toggle(sel, sel ? "●" : "", EditorStyles.miniButton, GUILayout.Width(24)) && !sel)
-                    _paintColorIdx = i;
-            }
+            if (cfg != null && cfg.listColor != null)
+                foreach (var co in cfg.listColor)
+                {
+                    if (co == null || co.typeColor == TypeColor.None) continue;
+                    bool sel = _paintColor == co.typeColor;
+                    GUI.backgroundColor = GlobalConfigManager.ColorOf(co.typeColor);
+                    if (GUILayout.Toggle(sel, sel ? "●" : "", EditorStyles.miniButton, GUILayout.Width(24)) && !sel)
+                        _paintColor = co.typeColor;
+                }
             GUI.backgroundColor = bg;
             EditorGUILayout.EndHorizontal();
 
-            EditorGUILayout.HelpBox(_paintColorIdx < 0
-                ? "Paint = None: click cell KHÔNG đổi màu (chỉ kéo handle/xoay hướng)."
-                : $"Đang tô màu {(BlockColor)_paintColorIdx} — click cell trong khung giữa để đổi màu cell đó.",
+            if (cfg == null)
+            {
+                EditorGUILayout.HelpBox("Không tìm thấy GlobalConfigManager → không có bảng màu.", MessageType.Warning);
+                return;
+            }
+            EditorGUILayout.HelpBox(_paintColor == TypeColor.None
+                ? "Paint = None: click cell/gun để XEM & SỬA thông số (không đổi màu)."
+                : $"Đang tô màu {_paintColor} — click cell trong khung giữa để đổi màu cell đó.",
                 MessageType.None);
         }
 

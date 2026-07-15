@@ -26,13 +26,17 @@ namespace Wayfu.Lamkn
             _renderer = GetComponentInChildren<Renderer>();
         }
 
-        public void Launch(Vector3 start, BlockCell target, float speed, Color color)
+        public void Launch(Vector3 start, BlockCell target, float speed, TypeColor color)
         {
             transform.position = start;
             _cell = target;
             _speed = speed;
             _active = true;
-            if (_renderer != null) _renderer.material.color = color;
+
+            // Material lấy từ GlobalConfigManager theo TypeColor.
+            if (_renderer == null) _renderer = GetComponentInChildren<Renderer>();
+            var mat = GlobalConfigManager.MaterialOf(color, TypeObject.Bullet);
+            if (_renderer != null && mat != null) _renderer.sharedMaterial = mat;
         }
 
         private void Update()

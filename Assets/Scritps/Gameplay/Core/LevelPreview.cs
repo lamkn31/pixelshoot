@@ -65,7 +65,7 @@ namespace Wayfu.Lamkn
                             var cell = grid.GetCell(r, e);
                             if (cell == null || cell.BlockStackCt <= 0) continue;
                             Vector3 pos = grid.CellPos(r, e);
-                            Gizmos.color = BlockColorPalette.ToColor(cell.Color);
+                            Gizmos.color = GlobalConfigManager.ColorOf(cell.Color);
                             int stack = Mathf.Max(1, cell.BlockStackCt);
                             for (int j = 0; j < stack; j++)
                                 Gizmos.DrawWireCube(pos + Vector3.up * stackSpacing * j, Vector3.one * 0.45f);

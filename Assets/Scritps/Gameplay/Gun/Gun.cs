@@ -15,7 +15,7 @@ namespace Wayfu.Lamkn
         private enum GunState { InSlot, OnPath, Dead }
 
         public GunData Data { get; private set; }
-        public BlockColor Color => Data.Color;
+        public TypeColor Color => Data.Color;
         public GunSlot Slot { get; private set; }
 
         /// <summary>Khoảng cách tích luỹ trên path (PathManager ghi/đọc).</summary>
@@ -28,7 +28,6 @@ namespace Wayfu.Lamkn
         private float _bulletSpeed = 14f;
         private float _fireTimer;
         private BlockCell _currentTarget;
-        private int _lockedCol = -1;   // cột đang cam kết ăn dứt (BlockCol); -1 = chưa cam kết
         private Renderer _renderer;
         private TextMesh _label;
         private Coroutine _moveRoutine;
@@ -62,11 +61,12 @@ namespace Wayfu.Lamkn
             // Reset trạng thái (item pooled có thể tái dùng).
             _fireTimer = 0f;
             _currentTarget = null;
-            _lockedCol = -1;
             if (_moveRoutine != null) { StopCoroutine(_moveRoutine); _moveRoutine = null; }
 
-            _renderer = GetComponentInChildren<Renderer>();
-            if (_renderer != null) _renderer.material.color = BlockColorPalette.ToColor(Data.Color);
+            // Material lấy từ GlobalConfigManager theo TypeColor (không tô material.color nữa).
+            if (_renderer == null) _renderer = GetComponentInChildren<Renderer>();
+            var mat = GlobalConfigManager.MaterialOf(Data.Color, TypeObject.Gun);
+            if (_renderer != null && mat != null) _renderer.sharedMaterial = mat;
 
             EnsureLabel();
             UpdateLabel();
@@ -111,18 +111,11 @@ namespace Wayfu.Lamkn
             // Cell bị clear sẽ Destroy → reference == null, nên chỉ cần check null/IsEmpty.
             // Cell Spawner đẩy cell kế ra TẠI CHỖ và có thể ĐỔI MÀU → phải bỏ khoá nếu màu hết khớp.
             if (_currentTarget == null || _currentTarget.IsEmpty || _currentTarget.Color != Data.Color)
-            {
-                _currentTarget = GridBlockManager.Instance?.FindTargetCell(
-                    Data.Color, transform.position, _fireRange, _lockedCol);
-                // Cột cạn (không còn cell cùng màu bắn được) → nhả cam kết; muốn ăn cột mới phải lọt
-                // vòng phát hiện lần nữa, nên gun đã chạy qua grid sẽ không bắn cell vừa xuất hiện.
-                _lockedCol = _currentTarget != null ? _currentTarget.BlockCol : -1;
-            }
+                _currentTarget = GridBlockManager.Instance?.FindTargetCell(Data.Color, transform.position, _fireRange);
 
             _fireTimer -= Time.deltaTime;
-            // KHÔNG gate theo range: range chỉ dùng để PHÁT HIỆN target (xem FindTargetCell). Đã chốt được
-            // cell thì bắn dứt điểm rồi đi tiếp xuống cột, dù gun đã chạy ra xa.
-            // Chỉ bắn khi cell còn block CHƯA bị đạn đang bay đặt chỗ (tránh bắn dư đạn).
+            // Range chỉ lọc lúc CHỌN target (xem FindTargetCell); đã chốt được cell thì bắn dứt điểm kể cả
+            // khi gun đã trôi ra xa. Chỉ bắn khi cell còn block CHƯA bị đạn đang bay đặt chỗ (tránh bắn dư).
             if (_fireTimer <= 0f && _currentTarget != null && _currentTarget.Available > 0)
             {
                 Fire(_currentTarget);
@@ -145,7 +138,7 @@ namespace Wayfu.Lamkn
             cell.ReserveHit();
             var bullet = PoolManager.Instance != null ? PoolManager.Instance.GetBullet() : null;
             if (bullet != null)
-                bullet.Launch(transform.position, cell, _bulletSpeed, BlockColorPalette.ToColor(Data.Color));
+                bullet.Launch(transform.position, cell, _bulletSpeed, Data.Color);
             else
             {
                 cell.ApplyHit(); // fallback không có pool

@@ -128,16 +128,14 @@ namespace Wayfu.Lamkn
         }
 
         /// <summary>
-        /// Chọn cell cùng màu để bắn, trong số các cell KHÔNG BỊ CHẶN.
-        /// <para><paramref name="lockedCol"/> = cột gun ĐANG cam kết ăn dứt (-1 = chưa). Cell thuộc cột đó
-        /// được bắn BẤT KỂ khoảng cách — đã mở cột thì ăn cho hết, kể cả cell ẩn Spawner mới nhả ra.</para>
-        /// <para>Cột MỚI thì phải lọt <paramref name="detectRange"/> (vòng phát hiện, tròn trên sàn XZ) mới
-        /// bắt được — nhờ vậy gun đã chạy qua grid sẽ KHÔNG bắn được cell vừa xuất hiện ở cột khác.</para>
-        /// <para>Thứ tự ưu tiên: cell SÂU hơn (row lớn) trước — cell sâu chỉ hở khi cột trước nó đã sạch,
-        /// nên gun ăn hàng 0 → xuống sâu dần trong CÙNG cột → hết cột mới sang cột kế. Cùng độ sâu thì
-        /// lấy cell gần nhất.</para>
+        /// Chọn cell cùng màu để bắn, trong số các cell KHÔNG BỊ CHẶN và nằm trong
+        /// <paramref name="detectRange"/> (vòng phát hiện, tròn trên sàn XZ). Xét MỌI grid — gun chạy giữa
+        /// 2 grid sẽ ăn được cả hai bên.
+        /// <para>Thứ tự ưu tiên: cell SÂU hơn (row lớn) trước — cell sâu chỉ hở khi cell chặn nó đã sạch,
+        /// nên gun ăn hàng 0 → xuống sâu dần trong cùng cột. Cùng độ sâu thì lấy cell GẦN NHẤT: vì cột trải
+        /// dọc path nên gần nhất cũng chính là tuần tự theo index, không nhảy cóc.</para>
         /// </summary>
-        public BlockCell FindTargetCell(BlockColor color, Vector3 from, float detectRange, int lockedCol)
+        public BlockCell FindTargetCell(TypeColor color, Vector3 from, float detectRange)
         {
             BlockCell best = null;
             int bestRow = -1;
@@ -152,10 +150,9 @@ namespace Wayfu.Lamkn
                         var cell = row[e];
                         if (cell == null || cell.Color != color) continue;
                         if (!IsShootable(gr, r, e)) continue;
-                        if (lockedCol >= 0 && cell.BlockCol == lockedCol) return cell; // cột đã cam kết
                         Vector3 d = cell.transform.position - from; d.y = 0f;
                         float sqr = d.sqrMagnitude;
-                        if (sqr > detectSqr) continue; // cột mới: phải lọt vòng phát hiện
+                        if (sqr > detectSqr) continue;
                         if (r > bestRow || (r == bestRow && sqr < bestSqr))
                         { bestRow = r; bestSqr = sqr; best = cell; }
                     }
@@ -163,7 +160,7 @@ namespace Wayfu.Lamkn
             return best;
         }
 
-        public bool HasFrontCellOfColor(BlockColor color)
+        public bool HasFrontCellOfColor(TypeColor color)
         {
             foreach (var gr in _grids)
                 for (int r = 0; r < gr.Rows.Count; r++)

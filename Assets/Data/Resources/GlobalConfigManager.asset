@@ -14,15 +14,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   listColor:
   - typeColor: 1
-    color: {r: 1, g: 0, b: 0, a: 0}
+    color: {r: 1, g: 0, b: 0, a: 1}
     matBlock: {fileID: 2100000, guid: b68986854468e8c448b0afa2fe535aa5, type: 2}
     matGun: {fileID: 2100000, guid: 517749b390812bd40a28e73daeb878d2, type: 2}
   - typeColor: 2
-    color: {r: 0.04830408, g: 1, b: 0, a: 0}
+    color: {r: 0.04830408, g: 1, b: 0, a: 1}
     matBlock: {fileID: 2100000, guid: b28663055948f93498e799677866e5b6, type: 2}
     matGun: {fileID: 2100000, guid: d6701c80eccfdfe418aa51720e22b098, type: 2}
   - typeColor: 3
-    color: {r: 0, g: 0.19427729, b: 1, a: 0}
+    color: {r: 0, g: 0.19427729, b: 1, a: 1}
     matBlock: {fileID: 2100000, guid: e9883398ee14092429bfe97265ee62cf, type: 2}
     matGun: {fileID: 2100000, guid: e04dc5ce9828fb740b1f89eb312efd42, type: 2}
   listEnviroment: []

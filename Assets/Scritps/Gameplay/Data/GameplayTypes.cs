@@ -4,9 +4,6 @@ using UnityEngine;
 
 namespace Wayfu.Lamkn
 {
-    /// <summary>Màu dùng chung cho Gun và Block. Gun chỉ bắn được block cùng màu.</summary>
-    public enum BlockColor { Red, Green, Blue, Yellow, Purple, Orange }
-
     /// <summary>Độ khó của level (~ GameDifficulty của PixelShoot_2).</summary>
     public enum GameDifficulty { Easy, Normal, Hard, VeryHard, Expert }
 
@@ -214,7 +211,7 @@ namespace Wayfu.Lamkn
     [Serializable]
     public class PendingBlockData
     {
-        public BlockColor Color;
+        public TypeColor Color;
         [Min(1)] public int BlockStackCt = 3;
     }
 
@@ -222,7 +219,7 @@ namespace Wayfu.Lamkn
     [Serializable]
     public class GunData
     {
-        public BlockColor Color;
+        public TypeColor Color;
         [Min(1)] public int CountBullet = 5;
     }
 
@@ -242,7 +239,7 @@ namespace Wayfu.Lamkn
     [Serializable]
     public class BlockCellData
     {
-        public BlockColor Color;
+        public TypeColor Color;
         public Vector3 CellPos;
         public Vector3 CellScale = Vector3.one;
 
@@ -294,21 +291,4 @@ namespace Wayfu.Lamkn
         [Min(1)] public int Strength = 1;
     }
 
-    /// <summary>Bảng màu dùng chung để tô Block/Gun và vẽ gizmo.</summary>
-    public static class BlockColorPalette
-    {
-        public static Color ToColor(BlockColor c)
-        {
-            switch (c)
-            {
-                case BlockColor.Red:    return new Color(0.90f, 0.22f, 0.22f);
-                case BlockColor.Green:  return new Color(0.24f, 0.78f, 0.32f);
-                case BlockColor.Blue:   return new Color(0.22f, 0.45f, 0.95f);
-                case BlockColor.Yellow: return new Color(0.96f, 0.83f, 0.22f);
-                case BlockColor.Purple: return new Color(0.62f, 0.32f, 0.85f);
-                case BlockColor.Orange: return new Color(0.96f, 0.55f, 0.16f);
-                default:                return Color.white;
-            }
-        }
-    }
 }

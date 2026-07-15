@@ -8,6 +8,44 @@ namespace Wayfu.Lamkn
     {
         public static GlobalConfigManager Current;
 
+        /// <summary>
+        /// Asset config dùng chung. Runtime load từ Resources; trong Editor fallback tìm qua AssetDatabase.
+        /// LƯU Ý: muốn build chạy được thì asset phải nằm trong thư mục Resources.
+        /// </summary>
+        public static GlobalConfigManager Instance
+        {
+            get
+            {
+                if (Current != null) return Current;
+                Current = Resources.Load<GlobalConfigManager>("GlobalConfigManager");
+#if UNITY_EDITOR
+                if (Current == null)
+                {
+                    var guids = UnityEditor.AssetDatabase.FindAssets("t:GlobalConfigManager");
+                    if (guids.Length > 0)
+                        Current = UnityEditor.AssetDatabase.LoadAssetAtPath<GlobalConfigManager>(
+                            UnityEditor.AssetDatabase.GUIDToAssetPath(guids[0]));
+                }
+#endif
+                return Current;
+            }
+        }
+
+        /// <summary>Material theo màu + loại object (null nếu chưa cấu hình).</summary>
+        public static Material MaterialOf(TypeColor color, TypeObject type)
+            => Instance != null ? Instance.GetMatColor(color, type) : null;
+
+        /// <summary>
+        /// Màu hiển thị của TypeColor để vẽ gizmo/editor. ÉP alpha = 1 vì asset đang lưu a = 0
+        /// (dùng thẳng sẽ ra trong suốt).
+        /// </summary>
+        public static Color ColorOf(TypeColor color)
+        {
+            var c = Instance != null ? Instance.GetColor(color) : Color.gray;
+            c.a = 1f;
+            return c;
+        }
+
         public List<ColorObject> listColor;
         public List<EnviromentObject> listEnviroment;
         [System.NonSerialized]
