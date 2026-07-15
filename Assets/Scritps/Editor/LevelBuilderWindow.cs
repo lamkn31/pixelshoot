@@ -387,21 +387,23 @@ namespace Wayfu.Lamkn
                 }
             }
 
-            // Vòng PHÁT HIỆN của gun tại các vị trí xuất phát trên path (không phải điều kiện bắn).
-            if (_showRange && _target.PathWaypoints != null && _target.PathWaypoints.Count >= 2)
+            // Vòng PHÁT HIỆN của gun tại ĐIỂM VÀO path — mọi gun đều xuất phát từ đây rồi chạy dọc path
+            // (không phải điều kiện bắn; xem GridBlockManager.FindTargetCell).
+            if (_showRange && _pathSamples != null && _pathSamples.Length >= 2)
             {
                 var gs = GameSettings.Instance;
-                int maxGun = gs != null ? gs.MaxGunOnPath : 5;
                 float rng = gs != null ? gs.GunFireRange : 3f;
-                float front = gs != null ? gs.FrontStationDistance : 0f, sp = gs != null ? gs.GunSpacing : 1.2f;
+                float front = gs != null ? gs.FrontStationDistance : 0f;
+                Vector3 ctr = PathPointAt(front);
                 Handles.color = new Color(1f, 0.85f, 0.2f, 0.9f);
-                for (int gi = 0; gi < maxGun; gi++)
+                Vector2 prev = Proj(ctr + new Vector3(rng, 0, 0));
+                for (int k = 1; k <= 26; k++)
                 {
-                    Vector3 ctr = PathPointAt(front + gi * sp); // khớp index đảo của PathManager
-                    Vector2 prev = Proj(ctr + new Vector3(rng, 0, 0));
-                    for (int k = 1; k <= 26; k++) { float a = k / 26f * Mathf.PI * 2f; Vector2 s = Proj(ctr + new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)) * rng); Line(prev, s); prev = s; }
-                    Vector2 c = Proj(ctr); FillRect(new Rect(c.x - 3, c.y - 3, 6, 6), Color.yellow);
+                    float a = k / 26f * Mathf.PI * 2f;
+                    Vector2 s = Proj(ctr + new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)) * rng);
+                    Line(prev, s); prev = s;
                 }
+                Vector2 c = Proj(ctr); FillRect(new Rect(c.x - 3, c.y - 3, 6, 6), Color.yellow);
             }
 
             if (_showPath) HandleWaypointDrag(Proj, area);

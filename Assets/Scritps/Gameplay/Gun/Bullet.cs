@@ -12,6 +12,7 @@ namespace Wayfu.Lamkn
 
         private Pooler<Bullet> _pool;
         private BlockCell _cell;
+        private int _cellGen; // Generation của cell lúc bắn — lệch = cell pooled đã bị tái dùng
         private float _speed = 14f;
         private bool _active;
         private Renderer _renderer;
@@ -30,6 +31,7 @@ namespace Wayfu.Lamkn
         {
             transform.position = start;
             _cell = target;
+            _cellGen = target != null ? target.Generation : 0;
             _speed = speed;
             _active = true;
 
@@ -42,7 +44,9 @@ namespace Wayfu.Lamkn
         private void Update()
         {
             if (!_active) return;
-            if (_cell == null) { Despawn(); return; } // cell đã bị phá bởi đạn khác
+            // Cell đã bị phá — hoặc object pooled đã TÁI DÙNG thành cell khác (Generation lệch) → huỷ đạn,
+            // không bay đuổi theo cell mới ở vị trí khác.
+            if (_cell == null || _cell.Generation != _cellGen) { Despawn(); return; }
 
             Vector3 target = _cell.transform.position;
             transform.position = Vector3.MoveTowards(transform.position, target, _speed * Time.deltaTime);

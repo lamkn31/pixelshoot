@@ -155,6 +155,7 @@ namespace Wayfu.Lamkn
                     {
                         var cell = row[e];
                         if (cell == null || cell.Color != color) continue;
+                        if (cell.PendingEntry) continue; // đang TRƯỢT (nhả mới / dồn hàng) → chưa cho ngắm
                         if (!IsShootable(gr, r, e)) continue;
                         Vector3 d = cell.transform.position - from; d.y = 0f;
                         float sqr = d.sqrMagnitude;
@@ -260,6 +261,7 @@ namespace Wayfu.Lamkn
                     prev[slot] = cell;
                     cur[e] = null;
                     cell.SetColumn(slot);
+                    // Không gỡ PendingEntry ở đây: transform còn đang trượt. MoveTo tự gỡ khi tới nơi.
                     cell.MoveTo(gr.Data.CellPosAt(r - 1, slot, prev.Length), _collapseDuration);
                     moved = true;
                 }
@@ -298,7 +300,7 @@ namespace Wayfu.Lamkn
                 // Xuất phát từ ô sâu hơn 1 bậc rồi trượt vào → nhìn rõ là được đẩy ra.
                 Vector3 spawnPos = gr.Data.CellPosAt(src.Row + 1, src.Col, cols);
                 var cell = CreateCell(gr, $"Cell_spawn_r{src.Row}_e{src.Col}", spawnPos, data);
-                cell.MoveTo(pos, _collapseDuration);
+                cell.MoveTo(pos, _collapseDuration); // MoveTo tự khoá ngắm tới khi cell trượt xong
                 gr.Rows[src.Row][src.Col] = cell;
             }
             return fed;
@@ -337,7 +339,7 @@ namespace Wayfu.Lamkn
                 };
 
                 row[e] = CreateCell(gr, $"Cell_refill_r{rowIndex}_e{e}", spawnPos, data);
-                row[e].MoveTo(pos, _collapseDuration);
+                row[e].MoveTo(pos, _collapseDuration); // MoveTo tự khoá ngắm tới khi cell trượt xong
                 fed = true;
             }
             return fed;

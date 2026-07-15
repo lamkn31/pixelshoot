@@ -5,8 +5,9 @@ namespace Wayfu.Lamkn
 {
     /// <summary>
     /// Dựng đường path (RoundedPolylinePath + mặt đường LineRenderer) từ LevelData và quản lý các gun
-    /// chạy trên đó. Gun chạy loop liên tục bằng RoundedPolylineFollower; mỗi lượt deploy được xếp cách
-    /// nhau GunSpacing dọc path. Thua khi đủ gun mà không gun nào bắn được.
+    /// chạy trên đó. Mọi gun vào path tại ĐIỂM ĐẦU (FrontStationDistance, mặc định 0) rồi chạy loop liên
+    /// tục bằng RoundedPolylineFollower — khoảng cách giữa các gun là do thời điểm click quyết định.
+    /// Thua khi đủ MaxGunOnPath mà không gun nào bắn được.
     /// </summary>
     public class PathManager : Singleton<PathManager>
     {
@@ -18,11 +19,9 @@ namespace Wayfu.Lamkn
 
         private RoundedPolylinePath _path;
         private readonly List<Gun> _guns = new List<Gun>();   // [0] = gun vào trước nhất
-        private float _gunSpacing = 1.2f;
         private float _gunSpeed = 3f;
-        private float _frontStationDistance;
+        private float _frontStationDistance; // điểm VÀO path của mọi gun (0 = đầu path)
         private int _maxGunOnPath = 5;
-        private int _deployCount; // đếm lượt deploy để trải đều gun quanh loop (không tái dùng khi gun chết)
 
         public bool IsFull => _guns.Count >= _maxGunOnPath;
         public bool CanAccept => _guns.Count < _maxGunOnPath;
@@ -35,7 +34,6 @@ namespace Wayfu.Lamkn
             Clear();
 
             var gs = GameSettings.Instance;
-            _gunSpacing = gs != null ? gs.GunSpacing : 1.2f;
             _gunSpeed = gs != null ? gs.GunSpeed : 3f;
             _maxGunOnPath = gs != null ? gs.MaxGunOnPath : 5;
             _frontStationDistance = gs != null ? gs.FrontStationDistance : 0f;
@@ -103,9 +101,10 @@ namespace Wayfu.Lamkn
         public void AddGun(Gun gun)
         {
             _guns.Add(gun);
-            // index ĐẢO (yêu cầu #2): gun vào sau đứng TRƯỚC theo chiều path (+spacing thay vì -).
-            float startDist = _frontStationDistance + _deployCount * _gunSpacing;
-            _deployCount++;
+            // MỌI gun đều vào path từ ĐIỂM ĐẦU (distance = FrontStationDistance, mặc định 0 = pos 0 của
+            // path) rồi chạy tới. Khoảng cách giữa các gun sinh ra từ thời điểm click, không cộng offset
+            // theo lượt deploy nữa.
+            float startDist = _frontStationDistance;
             gun.Distance = startDist;
             gun.DeployOnPath(_path, startDist, _gunSpeed); // follower chạy vòng liên tục
         }
@@ -118,7 +117,6 @@ namespace Wayfu.Lamkn
         public void Clear()
         {
             _guns.Clear(); // gun trả về pool qua PoolManager.ReturnAll khi rebuild
-            _deployCount = 0;
             // pathLine nằm trên scene (không bị destroy cùng GunPath) → phải xoá điểm của level cũ.
             if (pathLine != null) pathLine.positionCount = 0;
             if (_path != null) { Destroy(_path.gameObject); _path = null; }

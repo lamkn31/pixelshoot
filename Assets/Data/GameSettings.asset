@@ -21,4 +21,4 @@ MonoBehaviour:
   FrontStationDistance: 0
   BulletSpeed: 120
   BlockStackSpacing: 1
-  BlockCollapseDuration: 0.25
+  BlockCollapseDuration: 0.1

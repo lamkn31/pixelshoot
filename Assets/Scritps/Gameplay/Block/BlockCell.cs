@@ -23,6 +23,21 @@ namespace Wayfu.Lamkn
         /// <summary>Cập nhật index cột khi cell dồn lên ô khác (Arc cột lệch: index có thể đổi).</summary>
         public void SetColumn(int col) => BlockCol = col;
 
+        /// <summary>
+        /// Cell đang TRƯỢT tới ô của nó (vừa nhả ra, hoặc đang dồn hàng) → gun không được ngắm.
+        /// MoveTo tự bật khi bắt đầu trượt và tắt khi tới nơi. Nhờ vậy gun chỉ ngắm cell đã ĐỨNG YÊN
+        /// ở hàng 0: cell kế vừa dồn tới nếu cùng màu thì bị bắn tiếp, khác màu thì gun bỏ cả cột đó
+        /// (cell khác màu chặn mọi cell phía sau).
+        /// </summary>
+        public bool PendingEntry { get; private set; }
+
+        /// <summary>
+        /// Số THẾ HỆ — tăng mỗi lần Build. Cell là item pooled: object bị tái dùng cho cell khác ngay
+        /// trong cùng frame, nên reference không đủ để biết "target còn sống". Gun/Bullet lưu Generation
+        /// lúc chốt target; lệch = object đã thành cell khác → bỏ target, không bám theo ra ô mới.
+        /// </summary>
+        public int Generation { get; private set; }
+
         private readonly List<Block> _blocks = new List<Block>();
         private GridBlockManager _manager;
         private Coroutine _moveRoutine;
@@ -46,6 +61,8 @@ namespace Wayfu.Lamkn
             BlockCol = data.BlockCol;
             Depth = data.SpawnerDepth;
             _pendingHits = 0;
+            Generation++;                    // object pool tái dùng → đây là 1 cell MỚI
+            PendingEntry = false;            // reset cho item pooled; MoveTo tự bật khi cell trượt
             ReleaseBlocks();                 // item pooled tái dùng: dọn stack cũ trước
             ShowSpawnerIndicator(false);
 
@@ -117,7 +134,13 @@ namespace Wayfu.Lamkn
         public void MoveTo(Vector3 target, float duration)
         {
             if (_moveRoutine != null) StopCoroutine(_moveRoutine);
-            if (!gameObject.activeInHierarchy || duration <= 0f) { transform.position = target; return; }
+            if (!gameObject.activeInHierarchy || duration <= 0f)
+            {
+                transform.position = target;
+                PendingEntry = false; // tới nơi ngay → cho ngắm
+                return;
+            }
+            PendingEntry = true; // bắt đầu trượt → tạm khoá ngắm tới khi tới nơi
             _moveRoutine = StartCoroutine(MoveRoutine(target, duration));
         }
 
@@ -133,6 +156,7 @@ namespace Wayfu.Lamkn
             }
             transform.position = target;
             _moveRoutine = null;
+            PendingEntry = false; // đã trượt xong về đúng ô → giờ mới cho gun ngắm
         }
     }
 }

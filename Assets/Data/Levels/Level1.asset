@@ -30,14 +30,16 @@ MonoBehaviour:
       CountBullet: 60
     - Color: 3
       CountBullet: 60
-    - Color: 1
-      CountBullet: 21
+    - Color: 2
+      CountBullet: 60
   - Guns:
     - Color: 3
       CountBullet: 60
+    - Color: 2
+      CountBullet: 60
     - Color: 3
       CountBullet: 60
-    - Color: 2
+    - Color: 3
       CountBullet: 60
   HoleCapacity: 3
   Grids:
@@ -732,13 +734,13 @@ MonoBehaviour:
       BlockCol: 0
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 58.01054
     - Color: 3
@@ -747,13 +749,13 @@ MonoBehaviour:
       BlockCol: 1
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 63.78183
     - Color: 3
@@ -762,13 +764,13 @@ MonoBehaviour:
       BlockCol: 2
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 70.116356
     - Color: 3
@@ -777,13 +779,13 @@ MonoBehaviour:
       BlockCol: 3
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 76.92519
     - Color: 3
@@ -792,13 +794,13 @@ MonoBehaviour:
       BlockCol: 4
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 84.05415
     - Color: 3
@@ -807,13 +809,13 @@ MonoBehaviour:
       BlockCol: 5
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 91.296555
     - Color: 3
@@ -822,13 +824,13 @@ MonoBehaviour:
       BlockCol: 6
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 98.42552
     - Color: 3
@@ -837,13 +839,13 @@ MonoBehaviour:
       BlockCol: 7
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 105.23436
     - Color: 3
@@ -852,13 +854,13 @@ MonoBehaviour:
       BlockCol: 8
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 111.568886
     - Color: 3
@@ -869,19 +871,11 @@ MonoBehaviour:
       BlockStackCt: 3
       Type: 1
       Queue:
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
+      - Color: 2
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 117.34018
     PendingRefill: []
@@ -1576,13 +1570,9 @@ MonoBehaviour:
       BlockCol: 0
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 58.01054
     - Color: 3
@@ -1591,13 +1581,9 @@ MonoBehaviour:
       BlockCol: 1
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 63.78183
     - Color: 3
@@ -1606,13 +1592,9 @@ MonoBehaviour:
       BlockCol: 2
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 70.116356
     - Color: 3
@@ -1621,13 +1603,9 @@ MonoBehaviour:
       BlockCol: 3
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 76.92519
     - Color: 3
@@ -1636,13 +1614,9 @@ MonoBehaviour:
       BlockCol: 4
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 84.05415
     - Color: 3
@@ -1651,13 +1625,9 @@ MonoBehaviour:
       BlockCol: 5
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 91.296555
     - Color: 3
@@ -1666,13 +1636,9 @@ MonoBehaviour:
       BlockCol: 6
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 98.42552
     - Color: 3
@@ -1681,13 +1647,9 @@ MonoBehaviour:
       BlockCol: 7
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 105.23436
     - Color: 3
@@ -1696,13 +1658,9 @@ MonoBehaviour:
       BlockCol: 8
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 111.568886
     - Color: 3
@@ -1711,13 +1669,9 @@ MonoBehaviour:
       BlockCol: 9
       SpawnerDepth: 5
       BlockStackCt: 3
-      Type: 0
+      Type: 1
       Queue:
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
-        BlockStackCt: 3
-      - Color: 1
+      - Color: 3
         BlockStackCt: 3
       SpawnerDirectionAngleZ: 117.34018
     PendingRefill: []

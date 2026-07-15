@@ -141,10 +141,20 @@ namespace Wayfu.Lamkn
         {
             a = -1; b = -1;
             if (prevCount <= 0) return;
+
+            // Cùng số cell (Rect / Arc-Uniform) → cột THẲNG, map 1:1. Phải chặn sớm ở đây: đi qua công thức
+            // tỉ lệ bên dưới sẽ dính sai số float (vd 3/9f*9f = 3.0000001 → Ceil ra 4), sinh index chặn giả
+            // và cho cell dồn CHÉO sang cột bên cạnh.
+            if (curCount == prevCount) { a = Mathf.Clamp(e, 0, prevCount - 1); return; }
             if (curCount <= 1 || prevCount <= 1) { a = 0; return; }
 
             float s = Mathf.Clamp01(e / (float)(curCount - 1)); // vị trí chuẩn hoá dọc cung
             float f = s * (prevCount - 1);
+
+            // Rơi (gần như) đúng vào 1 index → chỉ 1 cell chặn. Snap để sai số float không đẻ ra index thứ 2.
+            int fi = Mathf.RoundToInt(f);
+            if (Mathf.Abs(f - fi) < 1e-4f) { a = Mathf.Clamp(fi, 0, prevCount - 1); return; }
+
             a = Mathf.Clamp(Mathf.FloorToInt(f), 0, prevCount - 1);
             int c = Mathf.Clamp(Mathf.CeilToInt(f), 0, prevCount - 1);
             if (c != a) b = c;
