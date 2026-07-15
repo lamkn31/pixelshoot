@@ -53,6 +53,23 @@ namespace Wayfu.Lamkn
         // Generate grid.
         private BlockColor _genColor = BlockColor.Red;
         private int _genStack = 3;
+        private BlockGridShape _genShape = BlockGridShape.Arc; // loại grid khi bấm "+ Grid"
+
+        // Bảng màu tô cell bằng click trong khung giữa. -1 = None → click KHÔNG đổi màu cell.
+        private int _paintColorIdx = -1;
+
+        // Foldout: thu gọn từng nhóm cho panel phải ngắn lại (chỉ GRIDS mở sẵn).
+        private bool _foldMeta, _foldPath, _foldPrefabs, _foldWaypoints, _foldSlots, _foldGrids = true;
+        private readonly List<bool> _foldGrid = new List<bool>();   // theo từng grid
+        private readonly List<bool> _foldSlot = new List<bool>();   // theo từng slot
+
+        // Foldout theo index, tự nới list. Mặc định đóng để panel gọn.
+        private static bool FoldAt(List<bool> flags, int i, string label)
+        {
+            while (flags.Count <= i) flags.Add(false);
+            flags[i] = EditorGUILayout.Foldout(flags[i], label, true);
+            return flags[i];
+        }
 
         [MenuItem("Wayfu/Level Tool")]
         public static void Open()
@@ -319,7 +336,7 @@ namespace Wayfu.Lamkn
                 }
             }
 
-            // Tầm bắn tại station.
+            // Vòng PHÁT HIỆN của gun tại các vị trí xuất phát trên path (không phải điều kiện bắn).
             if (_showRange && _target.PathWaypoints != null && _target.PathWaypoints.Count >= 2)
             {
                 var gs = GameSettings.Instance;
@@ -344,7 +361,8 @@ namespace Wayfu.Lamkn
                 var blockLbl = new GUIStyle(EditorStyles.miniBoldLabel) { alignment = TextAnchor.MiddleCenter };
                 blockLbl.normal.textColor = Color.white;
 
-                bool collectHits = Event.current.type == EventType.MouseDown;
+                // Chỉ thu thập vùng click khi thật sự đang tô màu (Paint != None) và có MouseDown.
+                bool collectHits = _paintColorIdx >= 0 && Event.current.type == EventType.MouseDown;
                 List<(Rect rect, int flat)> cellHits = collectHits ? new List<(Rect, int)>() : null;
 
                 for (int gi = 0; gi < _target.Grids.Count; gi++)
@@ -354,10 +372,19 @@ namespace Wayfu.Lamkn
                     int last = Mathf.Max(0, grid.Rows - 1);
                     cellHits?.Clear();
 
-                    // 2 cạnh bên + cell.
+                    // Viền: Rect = 4 cạnh; Arc = 2 cạnh bên.
                     Handles.color = new Color(0.7f, 0.7f, 0.7f);
-                    Line(Proj(grid.CellPos(0, 0)), Proj(grid.CellPos(last, grid.ElementsInRow(last) - 1)));
-                    Line(Proj(grid.CellPos(0, grid.ElementsInRow(0) - 1)), Proj(grid.CellPos(last, 0)));
+                    if (grid.Shape == BlockGridShape.Rect)
+                    {
+                        Vector3 p0 = grid.CellPos(0, 0), p1 = grid.CellPos(0, grid.ElementsInRow(0) - 1);
+                        Vector3 p2 = grid.CellPos(last, grid.ElementsInRow(last) - 1), p3 = grid.CellPos(last, 0);
+                        Line(Proj(p0), Proj(p1)); Line(Proj(p1), Proj(p2)); Line(Proj(p2), Proj(p3)); Line(Proj(p3), Proj(p0));
+                    }
+                    else
+                    {
+                        Line(Proj(grid.CellPos(0, 0)), Proj(grid.CellPos(last, grid.ElementsInRow(last) - 1)));
+                        Line(Proj(grid.CellPos(0, grid.ElementsInRow(0) - 1)), Proj(grid.CellPos(last, 0)));
+                    }
 
                     for (int r = 0; r < grid.Rows; r++)
                     {
@@ -495,9 +522,21 @@ namespace Wayfu.Lamkn
                 {
                     Vector3 center = g.FindPropertyRelative("Center").vector3Value;
                     Vector3 v = nw - center; v.y = 0f;
-                    g.FindPropertyRelative("BaseRadius").floatValue = Mathf.Max(0.1f, v.magnitude);
-                    float angle = Mathf.Atan2(v.x, v.z) * Mathf.Rad2Deg;
-                    g.FindPropertyRelative("ArcAngle").floatValue = Mathf.Clamp(Mathf.Abs(angle) * 2f, 1f, 350f);
+                    if (g.FindPropertyRelative("Shape").enumValueIndex == (int)BlockGridShape.Rect)
+                    {
+                        // Rect: đầu cạnh đặt khoảng cách tới hàng 0 (trục Z) + số cột (trục X).
+                        g.FindPropertyRelative("BaseRadius").floatValue = Mathf.Max(0.1f, Mathf.Abs(v.z));
+                        float step = Mathf.Max(0.01f, g.FindPropertyRelative("BlockWidth").floatValue
+                                                    + g.FindPropertyRelative("Spacing").floatValue);
+                        g.FindPropertyRelative("Columns").intValue =
+                            Mathf.Clamp(Mathf.RoundToInt(Mathf.Abs(v.x) * 2f / step) + 1, 1, 64);
+                    }
+                    else
+                    {
+                        g.FindPropertyRelative("BaseRadius").floatValue = Mathf.Max(0.1f, v.magnitude);
+                        float angle = Mathf.Atan2(v.x, v.z) * Mathf.Rad2Deg;
+                        g.FindPropertyRelative("ArcAngle").floatValue = Mathf.Clamp(Mathf.Abs(angle) * 2f, 1f, 350f);
+                    }
                 }
                 e.Use(); Repaint();
             }
@@ -520,9 +559,10 @@ namespace Wayfu.Lamkn
             }
         }
 
-        // Click trái vào ô cell → tô màu = Gen Color hiện tại.
+        // Click trái vào ô cell → tô thành màu đang chọn ở bảng Paint Color (None thì bỏ qua).
         private void PaintCellClick(int gi, List<(Rect rect, int flat)> hits, Rect area)
         {
+            if (_paintColorIdx < 0) return; // None → không tô
             var e = Event.current;
             if (e.type != EventType.MouseDown || e.button != 0 || e.alt || !area.Contains(e.mousePosition)) return;
             var grids = _so.FindProperty("Grids");
@@ -533,7 +573,7 @@ namespace Wayfu.Lamkn
                 if (!hits[i].rect.Contains(e.mousePosition)) continue;
                 int flat = hits[i].flat;
                 if (flat >= 0 && flat < cells.arraySize)
-                    cells.GetArrayElementAtIndex(flat).FindPropertyRelative("Color").enumValueIndex = (int)_genColor;
+                    cells.GetArrayElementAtIndex(flat).FindPropertyRelative("Color").enumValueIndex = _paintColorIdx;
                 e.Use(); Repaint();
                 return;
             }
@@ -667,67 +707,72 @@ namespace Wayfu.Lamkn
 
             _rightScroll = EditorGUILayout.BeginScrollView(_rightScroll);
             DrawMetaSection();
-            EditorGUILayout.Space(4); DrawCameraSection();
             EditorGUILayout.Space(4); DrawPathSection();
+            EditorGUILayout.Space(4); DrawPrefabsSection();
             EditorGUILayout.Space(4); DrawSlotsSection();
             EditorGUILayout.Space(4); DrawGridsSection();
-            EditorGUILayout.Space(4); DrawPropsSection();
             EditorGUILayout.EndScrollView();
             EditorGUILayout.EndVertical();
         }
 
+        // Đã bỏ khỏi UI (vẫn còn trong LevelData, code chiếu vẫn dùng): CAMERA FRAME (Ortho Size / Aspect /
+        // Center) — không cần chỉnh tay nữa vì đang WYSIWYG theo Scene Camera.
+        // Tạm ẩn: NumberOfColors, MechanicNames, PROPS/OBSTACLES.
         private void DrawMetaSection()
         {
             EditorGUILayout.BeginVertical("box");
-            EditorGUILayout.LabelField("META", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(_so.FindProperty("CurGameDifficulty"));
-            EditorGUILayout.PropertyField(_so.FindProperty("NumberOfColors"));
-            EditorGUILayout.PropertyField(_so.FindProperty("HoleCapacity"),
-                new GUIContent("Hole Capacity", "Stack mỗi cell khi Generate Cells."));
-            EditorGUILayout.PropertyField(_so.FindProperty("MechanicNames"), true);
+            _foldMeta = EditorGUILayout.Foldout(_foldMeta, "META", true, EditorStyles.foldoutHeader);
+            if (_foldMeta)
+            {
+                EditorGUILayout.PropertyField(_so.FindProperty("CurGameDifficulty"));
+                EditorGUILayout.PropertyField(_so.FindProperty("HoleCapacity"),
+                    new GUIContent("Hole Capacity", "Stack mỗi cell khi Generate Cells."));
+            }
             EditorGUILayout.EndVertical();
         }
 
-        private void DrawCameraSection()
+        private void DrawPrefabsSection()
         {
             EditorGUILayout.BeginVertical("box");
-            EditorGUILayout.LabelField("CAMERA FRAME", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(_so.FindProperty("CameraOrthoSize"), new GUIContent("Ortho Size"));
-            EditorGUILayout.PropertyField(_so.FindProperty("ScreenAspect"), new GUIContent("Aspect (W:H)"));
-            EditorGUILayout.PropertyField(_so.FindProperty("CameraCenter"));
-            EditorGUILayout.HelpBox(_previewCamera != null
-                ? "WYSIWYG: chiếu đúng bằng Scene Camera như game (physical cam + aspect). Thứ nằm SAU LƯNG camera (vd path) sẽ bị ẩn — đúng như in-game."
-                : "Không tìm thấy Camera trong scene → tạm vẽ phẳng top-down (ortho rect). Ortho Size / Center chỉ dùng cho fallback này.", MessageType.None);
+            _foldPrefabs = EditorGUILayout.Foldout(_foldPrefabs, "PREFABS", true, EditorStyles.foldoutHeader);
+            if (_foldPrefabs)
+            {
+                EditorGUILayout.PropertyField(_so.FindProperty("GunPrefab"));
+                EditorGUILayout.PropertyField(_so.FindProperty("BlockPrefab"));
+                EditorGUILayout.PropertyField(_so.FindProperty("BulletPrefab"));
+            }
             EditorGUILayout.EndVertical();
         }
 
         private void DrawPathSection()
         {
             EditorGUILayout.BeginVertical("box");
-            EditorGUILayout.LabelField("PATH SHAPE (riêng level)", EditorStyles.boldLabel);
+            _foldPath = EditorGUILayout.Foldout(_foldPath, "PATH SHAPE (riêng level)", true, EditorStyles.foldoutHeader);
+            if (!_foldPath) { EditorGUILayout.EndVertical(); return; }
+
             EditorGUILayout.PropertyField(_so.FindProperty("IsClosed"));
             EditorGUILayout.PropertyField(_so.FindProperty("CornerRadius"));
-            EditorGUILayout.PropertyField(_so.FindProperty("GunPrefab"));
-            EditorGUILayout.PropertyField(_so.FindProperty("BlockPrefab"));
-            EditorGUILayout.PropertyField(_so.FindProperty("BulletPrefab"));
 
             var wp = _so.FindProperty("PathWaypoints");
-            EditorGUILayout.LabelField($"Waypoints — {wp.arraySize}", EditorStyles.miniBoldLabel);
-            int pend = -1; ListOp op = ListOp.None;
-            for (int i = 0; i < wp.arraySize; i++)
+            _foldWaypoints = EditorGUILayout.Foldout(_foldWaypoints, $"Waypoints — {wp.arraySize}", true);
+            if (_foldWaypoints)
             {
-                EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.PropertyField(wp.GetArrayElementAtIndex(i), new GUIContent("WP " + i));
-                var o = MiniButtons(i, wp.arraySize);
-                if (o != ListOp.None) { pend = i; op = o; }
-                EditorGUILayout.EndHorizontal();
+                int pend = -1; ListOp op = ListOp.None;
+                for (int i = 0; i < wp.arraySize; i++)
+                {
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.PropertyField(wp.GetArrayElementAtIndex(i), new GUIContent("WP " + i));
+                    var o = MiniButtons(i, wp.arraySize);
+                    if (o != ListOp.None) { pend = i; op = o; }
+                    EditorGUILayout.EndHorizontal();
+                }
+                if (GUILayout.Button("+ Waypoint"))
+                {
+                    int idx = wp.arraySize; wp.arraySize++;
+                    wp.GetArrayElementAtIndex(idx).vector3Value = idx > 0 ? wp.GetArrayElementAtIndex(idx - 1).vector3Value + Vector3.right : Vector3.zero;
+                }
+                if (pend >= 0) ApplyOp(wp, pend, op);
             }
-            if (GUILayout.Button("+ Waypoint"))
-            {
-                int idx = wp.arraySize; wp.arraySize++;
-                wp.GetArrayElementAtIndex(idx).vector3Value = idx > 0 ? wp.GetArrayElementAtIndex(idx - 1).vector3Value + Vector3.right : Vector3.zero;
-            }
-            if (pend >= 0) ApplyOp(wp, pend, op);
             EditorGUILayout.EndVertical();
         }
 
@@ -735,9 +780,10 @@ namespace Wayfu.Lamkn
         {
             var slots = _so.FindProperty("Slots");
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField($"SLOTS — {slots.arraySize}", EditorStyles.boldLabel);
+            _foldSlots = EditorGUILayout.Foldout(_foldSlots, $"SLOTS — {slots.arraySize}", true, EditorStyles.foldoutHeader);
             if (GUILayout.Button("+ Slot", GUILayout.Width(58))) slots.GetArrayElementAtIndex(AddArray(slots)).FindPropertyRelative("Guns").arraySize = 0;
             EditorGUILayout.EndHorizontal();
+            if (!_foldSlots) return;
             EditorGUILayout.HelpBox("Vị trí slot lấy từ GunSlot trên scene (Slot0..4). Slot[i] có gun = slot i active.", MessageType.None);
 
             int pend = -1; ListOp op = ListOp.None;
@@ -746,11 +792,11 @@ namespace Wayfu.Lamkn
                 var guns = slots.GetArrayElementAtIndex(i).FindPropertyRelative("Guns");
                 EditorGUILayout.BeginVertical("box");
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField($"Slot {i} — {guns.arraySize} guns", EditorStyles.boldLabel);
+                bool open = FoldAt(_foldSlot, i, $"Slot {i} — {guns.arraySize} guns");
                 var o = MiniButtons(i, slots.arraySize);
                 if (o != ListOp.None) { pend = i; op = o; }
                 EditorGUILayout.EndHorizontal();
-                DrawGunList(guns);
+                if (open) DrawGunList(guns);
                 EditorGUILayout.EndVertical();
             }
             if (pend >= 0) ApplyOp(slots, pend, op);
@@ -779,15 +825,19 @@ namespace Wayfu.Lamkn
         {
             var grids = _so.FindProperty("Grids");
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField($"GRIDS — {grids.arraySize}", EditorStyles.boldLabel);
+            _foldGrids = EditorGUILayout.Foldout(_foldGrids, $"GRIDS — {grids.arraySize}", true, EditorStyles.foldoutHeader);
+            _genShape = (BlockGridShape)EditorGUILayout.EnumPopup(_genShape, GUILayout.Width(60));
             if (GUILayout.Button("+ Grid", GUILayout.Width(58))) AddGrid(grids);
             EditorGUILayout.EndHorizontal();
-            EditorGUILayout.HelpBox("Vòng cung: kéo TÂM (hồng) + 2 ĐẦU CẠNH (xanh) trong khung giữa. Row 0 = hàng ngoài cùng gần path; ra xa nhiều phần tử hơn.\nClick ô cell = tô màu Gen Color · kéo đầu mũi tên = xoay hướng cell.", MessageType.None);
+            if (!_foldGrids) return;
+            EditorGUILayout.HelpBox("Chọn loại grid (Arc = vòng cung, Rect = lưới chữ nhật) rồi bấm + Grid.\nKéo TÂM (hồng) + 2 ĐẦU CẠNH (xanh) trong khung giữa. Row 0 = hàng ngoài cùng gần path.\nClick ô cell = tô màu đang chọn ở Paint Color · kéo đầu mũi tên = xoay hướng cell.", MessageType.None);
 
             EditorGUILayout.BeginHorizontal();
             _genColor = (BlockColor)EditorGUILayout.EnumPopup("Gen Color", _genColor);
             _genStack = Mathf.Max(1, EditorGUILayout.IntField(new GUIContent("Refill Stack", "Stack cho hàng đợi Refill (Generate Cells dùng Hole Capacity)."), _genStack, GUILayout.Width(120)));
             EditorGUILayout.EndHorizontal();
+
+            DrawPaintPalette();
 
             int pend = -1; ListOp op = ListOp.None;
             for (int i = 0; i < grids.arraySize; i++)
@@ -799,25 +849,33 @@ namespace Wayfu.Lamkn
                 int gridBlocks = SumStack(grid.FindPropertyRelative("Cells"));
                 int pendBlocks = SumStack(grid.FindPropertyRelative("PendingRefill"));
                 string blkTxt = pendBlocks > 0 ? $"{gridBlocks}(+{pendBlocks})" : gridBlocks.ToString();
-                EditorGUILayout.LabelField($"Grid {i} — {rows} rows · {blkTxt} block", EditorStyles.boldLabel);
+                bool openGrid = FoldAt(_foldGrid, i, $"Grid {i} — {rows} rows · {blkTxt} block");
                 var o = MiniButtons(i, grids.arraySize);
                 if (o != ListOp.None) { pend = i; op = o; }
                 EditorGUILayout.EndHorizontal();
+                if (!openGrid) { EditorGUILayout.EndVertical(); continue; }
 
+                var shapeProp = grid.FindPropertyRelative("Shape");
+                bool isRect = shapeProp.enumValueIndex == (int)BlockGridShape.Rect;
+                EditorGUILayout.PropertyField(shapeProp, new GUIContent("Shape"));
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("Center"));
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.PropertyField(grid.FindPropertyRelative("BaseRadius"), new GUIContent("Base Radius"));
+                EditorGUILayout.PropertyField(grid.FindPropertyRelative("BaseRadius"),
+                    new GUIContent(isRect ? "Dist Row 0" : "Base Radius"));
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("RowSpacing"), new GUIContent("Row Spacing"));
                 EditorGUILayout.EndHorizontal();
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("Rows"), new GUIContent("Rows"));
-                EditorGUILayout.PropertyField(grid.FindPropertyRelative("ArcAngle"), new GUIContent("Arc Angle"));
+                if (isRect) EditorGUILayout.PropertyField(grid.FindPropertyRelative("Columns"), new GUIContent("Columns"));
+                else EditorGUILayout.PropertyField(grid.FindPropertyRelative("ArcAngle"), new GUIContent("Arc Angle"));
                 EditorGUILayout.EndHorizontal();
-                EditorGUILayout.PropertyField(grid.FindPropertyRelative("SpiralGrowth"), new GUIContent("Spiral Growth (xoắn)"));
+                if (!isRect) EditorGUILayout.PropertyField(grid.FindPropertyRelative("SpiralGrowth"), new GUIContent("Spiral Growth (xoắn)"));
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("BlockWidth"), new GUIContent("Block W"));
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("Spacing"), new GUIContent("Spacing"));
                 EditorGUILayout.EndHorizontal();
+                if (!isRect) EditorGUILayout.PropertyField(grid.FindPropertyRelative("Layout"), new GUIContent("Layout"));
+                EditorGUILayout.HelpBox(DescribeLayout(i), MessageType.None);
 
                 if (GUILayout.Button($"Generate Cells (Gen Color · stack = Hole Capacity {Mathf.Max(1, _target.HoleCapacity)})")) GenerateGridCells(i);
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("Cells"), new GUIContent($"Cells ({grid.FindPropertyRelative("Cells").arraySize})"), true);
@@ -829,15 +887,6 @@ namespace Wayfu.Lamkn
             if (pend >= 0) ApplyOp(grids, pend, op);
         }
 
-        private void DrawPropsSection()
-        {
-            EditorGUILayout.BeginVertical("box");
-            EditorGUILayout.LabelField("PROPS / OBSTACLES", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(_so.FindProperty("BoardProps"), true);
-            EditorGUILayout.PropertyField(_so.FindProperty("Obstacles"), true);
-            EditorGUILayout.EndVertical();
-        }
-
         #endregion
 
         #region Grid ops
@@ -846,14 +895,17 @@ namespace Wayfu.Lamkn
         {
             int idx = grids.arraySize; grids.arraySize++;
             var g = grids.GetArrayElementAtIndex(idx);
+            g.FindPropertyRelative("Shape").enumValueIndex = (int)_genShape;
             g.FindPropertyRelative("Center").vector3Value = Vector3.zero;
             g.FindPropertyRelative("BaseRadius").floatValue = 3f;
             g.FindPropertyRelative("RowSpacing").floatValue = 1.2f;
             g.FindPropertyRelative("Rows").intValue = 3;
+            g.FindPropertyRelative("Columns").intValue = 5;
             g.FindPropertyRelative("ArcAngle").floatValue = 90f;
             g.FindPropertyRelative("SpiralGrowth").floatValue = 0f;
             g.FindPropertyRelative("BlockWidth").floatValue = 0.8f;
             g.FindPropertyRelative("Spacing").floatValue = 0.2f;
+            g.FindPropertyRelative("Layout").enumValueIndex = (int)BlockGridLayout.ArcLength;
             g.FindPropertyRelative("Cells").arraySize = 0;
         }
 
@@ -917,6 +969,50 @@ namespace Wayfu.Lamkn
             }
         }
 
+        // Bảng màu tô cell: None (mặc định) = click cell không đổi gì. Chọn 1 màu → click cell trong khung
+        // giữa sẽ tô cell đó thành màu đang chọn.
+        private void DrawPaintPalette()
+        {
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Paint Color", GUILayout.Width(72));
+            if (GUILayout.Toggle(_paintColorIdx < 0, "None", EditorStyles.miniButton, GUILayout.Width(44)))
+                _paintColorIdx = -1;
+
+            int count = System.Enum.GetValues(typeof(BlockColor)).Length;
+            var bg = GUI.backgroundColor;
+            for (int i = 0; i < count; i++)
+            {
+                bool sel = _paintColorIdx == i;
+                GUI.backgroundColor = BlockColorPalette.ToColor((BlockColor)i);
+                if (GUILayout.Toggle(sel, sel ? "●" : "", EditorStyles.miniButton, GUILayout.Width(24)) && !sel)
+                    _paintColorIdx = i;
+            }
+            GUI.backgroundColor = bg;
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.HelpBox(_paintColorIdx < 0
+                ? "Paint = None: click cell KHÔNG đổi màu (chỉ kéo handle/xoay hướng)."
+                : $"Đang tô màu {(BlockColor)_paintColorIdx} — click cell trong khung giữa để đổi màu cell đó.",
+                MessageType.None);
+        }
+
+        // Mô tả số cell từng hàng + kiểu chặn, để thấy ngay cột có thẳng hay không.
+        private string DescribeLayout(int index)
+        {
+            if (index < 0 || index >= _target.Grids.Count) return "";
+            var g = _target.Grids[index];
+            var sb = new System.Text.StringBuilder();
+            sb.Append("Cell/hàng: ");
+            for (int r = 0; r < Mathf.Max(1, g.Rows); r++) sb.Append(g.ElementsInRow(r)).Append(r < g.Rows - 1 ? " / " : "");
+            if (g.Shape == BlockGridShape.Rect)
+                sb.Append("\nRect: lưới chữ nhật, mọi hàng = Columns → cột THẲNG, cell sau bị đúng 1 cell trước chặn.");
+            else
+                sb.Append(g.Layout == BlockGridLayout.Uniform
+                    ? "\nArc/Uniform: mọi hàng bằng nhau → cột THẲNG, cell sau bị đúng 1 cell trước chặn."
+                    : "\nArc/ArcLength: hàng ra xa nhiều cell hơn → cột LỆCH, cell giữa bị 2 cell trước chặn.");
+            return sb.ToString();
+        }
+
         private void GenerateGridCells(int index)
         {
             _so.ApplyModifiedProperties(); // sync các field vừa sửa
@@ -936,6 +1032,8 @@ namespace Wayfu.Lamkn
                     c.FindPropertyRelative("Color").enumValueIndex = (int)_genColor;
                     c.FindPropertyRelative("BlockStackCt").intValue = stack;
                     c.FindPropertyRelative("CellScale").vector3Value = Vector3.one;
+                    c.FindPropertyRelative("BlockCol").intValue = el;   // index cột trong hàng
+                    c.FindPropertyRelative("SpawnerDepth").intValue = r; // 0 = hàng sát path
                     // Hướng mặc định: dồn về TÂM grid (≈ về phía path).
                     Vector3 v = grid.Center - grid.CellPos(r, el); v.y = 0f;
                     c.FindPropertyRelative("SpawnerDirectionAngleZ").floatValue =

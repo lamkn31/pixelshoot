@@ -19,7 +19,8 @@ namespace Wayfu.Lamkn
         [Tooltip("Khoảng cách (arc-length) giữa các station gun trên path.")]
         public float GunSpacing = 1.2f;
         public float FireInterval = 0.25f;
-        [Tooltip("Tầm bắn: gun chỉ bắn cell cùng màu trong bán kính này.")]
+        [Tooltip("Tầm PHÁT HIỆN (không phải điều kiện bắn): gun bắt cell cùng màu ở hàng ngoài cùng sát path " +
+                 "trong bán kính này. Đã bắt được cột thì bắn dứt cả cột, kể cả khi gun đã chạy ra xa.")]
         public float GunFireRange = 3f;
         [Tooltip("Arc-length của station trước nhất trên path.")]
         public float FrontStationDistance = 0f;

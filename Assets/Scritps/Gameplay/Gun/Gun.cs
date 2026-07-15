@@ -105,21 +105,25 @@ namespace Wayfu.Lamkn
         {
             if (_state != GunState.OnPath) return;
 
-            // Luôn cập nhật target gần nhất cùng màu (để vẽ gizmo & quyết định bắn).
-            _currentTarget = GridBlockManager.Instance?.FindTargetCell(Data.Color, transform.position);
+            // Bám target tới khi cell bị phá HẾT rồi mới chọn cell khác (yêu cầu: dứt điểm từng cell).
+            // Cell bị clear sẽ Destroy → reference == null, nên chỉ cần check null/IsEmpty.
+            if (_currentTarget == null || _currentTarget.IsEmpty)
+                _currentTarget = GridBlockManager.Instance?.FindTargetCell(Data.Color, transform.position, _fireRange);
 
             _fireTimer -= Time.deltaTime;
+            // KHÔNG gate theo range: range chỉ dùng để PHÁT HIỆN target (xem FindTargetCell). Đã chốt được
+            // cell thì bắn dứt điểm rồi đi tiếp xuống cột, dù gun đã chạy ra xa.
             // Chỉ bắn khi cell còn block CHƯA bị đạn đang bay đặt chỗ (tránh bắn dư đạn).
-            if (_fireTimer <= 0f && _currentTarget != null && _currentTarget.Available > 0 && InRange(_currentTarget))
+            if (_fireTimer <= 0f && _currentTarget != null && _currentTarget.Available > 0)
             {
                 Fire(_currentTarget);
                 _fireTimer = _fireInterval;
             }
         }
 
+        /// <summary>Cell có nằm trong vòng PHÁT HIỆN không (hình tròn trên sàn XZ, bỏ qua chênh lệch Y).</summary>
         private bool InRange(BlockCell cell)
         {
-            // Range là hình TRÒN trên sàn XZ — bỏ qua chênh lệch Y (block xếp chồng theo Y).
             Vector3 d = cell.transform.position - transform.position; d.y = 0f;
             return d.sqrMagnitude <= _fireRange * _fireRange;
         }
@@ -199,18 +203,18 @@ namespace Wayfu.Lamkn
         }
 
 #if UNITY_EDITOR
-        // Vẽ tầm bắn (vòng vàng) + đường tới target (xanh = trong tầm, đỏ = ngoài tầm) để kiểm tra.
+        // Vòng vàng = tầm PHÁT HIỆN (chỉ dùng để bắt cell hàng 0 sát path). Đường tới target: xanh = target
+        // còn trong vòng phát hiện, đỏ = đã ra ngoài — vẫn bắn bình thường (không gate theo range).
         private void OnDrawGizmos()
         {
             if (_state == GunState.Dead) return;
 
             Handles.color = new Color(1f, 0.85f, 0.2f, 0.9f);
-            Handles.DrawWireDisc(transform.position, Vector3.up, _fireRange); // tầm bắn trên sàn XZ
+            Handles.DrawWireDisc(transform.position, Vector3.up, _fireRange); // vòng phát hiện trên sàn XZ
 
             if (_state == GunState.OnPath && _currentTarget != null)
             {
-                bool inRange = InRange(_currentTarget);
-                Gizmos.color = inRange ? UnityEngine.Color.green : UnityEngine.Color.red;
+                Gizmos.color = InRange(_currentTarget) ? UnityEngine.Color.green : UnityEngine.Color.red;
                 Gizmos.DrawLine(transform.position, _currentTarget.transform.position);
             }
         }

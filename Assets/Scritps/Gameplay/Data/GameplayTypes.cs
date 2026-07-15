@@ -14,17 +14,41 @@ namespace Wayfu.Lamkn
     public enum BlockObstacleType { None, Crate, Lock, Ice, Mystery, Barricade }
 
     /// <summary>
-    /// 1 grid xếp block dạng VÒNG CUNG (fan) trên sàn XZ. Mỗi hàng (row) là 1 cung bán kính
-    /// baseRadius + row*rowSpacing; SỐ BLOCK mỗi hàng TỰ TÍNH = chiều dài cung / (BlockWidth + Spacing),
-    /// rồi dãn đều trong góc mở ArcAngle. Ra xa cung dài hơn → nhiều block hơn. Row 0 = ngoài cùng gần path.
+    /// Cách chia số cell mỗi hàng của grid.
+    /// <para><b>ArcLength</b>: số cell = chiều dài cung / (BlockWidth+Spacing) → hàng ra xa có NHIỀU cell hơn
+    /// (4/5/6...). Cột không thẳng: 1 cell hàng sau bị chặn bởi TỐI ĐA 2 cell hàng trước (theo góc).</para>
+    /// <para><b>Uniform</b>: mọi hàng CÙNG số cell (lấy theo hàng chật nhất = row 0 để không chồng cell)
+    /// → cùng index = cùng góc = 1 cột xuyên tâm; chặn 1:1.</para>
+    /// </summary>
+    public enum BlockGridLayout { ArcLength, Uniform }
+
+    /// <summary>
+    /// Hình dạng grid block.
+    /// <para><b>Arc</b>: vòng cung (fan) quanh Center — hàng = cung bán kính BaseRadius + row*RowSpacing.</para>
+    /// <para><b>Rect</b>: lưới CHỮ NHẬT thông thường — hàng thẳng dọc trục X, sâu dần theo +Z;
+    /// mọi hàng có đúng <see cref="BlockGridData.Columns"/> cell nên cột luôn thẳng (chặn 1:1).</para>
+    /// </summary>
+    public enum BlockGridShape { Arc, Rect }
+
+    /// <summary>
+    /// 1 grid xếp block trên sàn XZ. Row 0 = ngoài cùng, gần path (gun ăn từ row 0 vào trong).
+    /// <para><b>Shape = Arc</b>: vòng cung (fan). Mỗi hàng là 1 cung bán kính BaseRadius + row*RowSpacing,
+    /// dãn đều trong góc mở ArcAngle. Số cell mỗi hàng theo <see cref="Layout"/>: ArcLength = chiều dài cung
+    /// / (BlockWidth+Spacing) → ra xa nhiều cell hơn (cột lệch); Uniform = mọi hàng bằng row 0 (cột thẳng).</para>
+    /// <para><b>Shape = Rect</b>: lưới CHỮ NHẬT thông thường — mỗi hàng có đúng <see cref="Columns"/> cell dãn
+    /// theo trục X quanh Center, hàng sâu dần theo +Z. Cột luôn thẳng (chặn 1:1); Layout không dùng.</para>
     /// </summary>
     [Serializable]
     public class BlockGridData
     {
-        [Tooltip("Tâm vòng cung (sàn XZ).")]
+        [Tooltip("Arc = vòng cung quanh Center. Rect = lưới chữ nhật thông thường (hàng thẳng theo X).")]
+        public BlockGridShape Shape = BlockGridShape.Arc;
+        [Tooltip("Tâm grid (sàn XZ).")]
         public Vector3 Center;
-        [Tooltip("Bán kính hàng đầu (row 0, gần path).")]
+        [Tooltip("Arc: bán kính hàng đầu. Rect: khoảng cách từ Center tới hàng đầu (row 0, gần path).")]
         public float BaseRadius = 3f;
+        [Tooltip("CHỈ dùng cho Rect: số cell mỗi hàng (mọi hàng bằng nhau → cột thẳng).")]
+        [Min(1)] public int Columns = 5;
         [Tooltip("Bán kính tăng thêm mỗi hàng ra xa.")]
         public float RowSpacing = 1.2f;
         [Min(1)] public int Rows = 3;
@@ -36,6 +60,8 @@ namespace Wayfu.Lamkn
         public float BlockWidth = 0.8f;
         [Tooltip("Khoảng cách giữa 2 block trên cùng hàng.")]
         public float Spacing = 0.2f;
+        [Tooltip("ArcLength = hàng ra xa nhiều cell hơn (cột lệch). Uniform = mọi hàng bằng nhau (cột thẳng).")]
+        public BlockGridLayout Layout = BlockGridLayout.ArcLength;
         [Tooltip("Cell theo thứ tự (row, element). Chỉ dùng Color + BlockStackCt.")]
         public List<BlockCellData> Cells = new List<BlockCellData>();
 
@@ -76,11 +102,34 @@ namespace Wayfu.Lamkn
             return len;
         }
 
-        /// <summary>Số block hàng row = chiều dài đường cong / (BlockWidth + Spacing).</summary>
+        /// <summary>
+        /// Số cell hàng row. ArcLength: theo chiều dài cung (ra xa nhiều hơn).
+        /// Uniform: mọi hàng lấy theo row 0 (hàng CHẬT nhất) để không hàng nào bị chồng cell.
+        /// </summary>
         public int ElementsInRow(int row)
         {
+            if (Shape == BlockGridShape.Rect) return Mathf.Max(1, Columns); // lưới chữ nhật: mọi hàng bằng nhau
+            if (Layout == BlockGridLayout.Uniform) row = 0;
             float step = Mathf.Max(0.01f, BlockWidth + Spacing);
             return Mathf.Max(1, Mathf.FloorToInt(RowLength(row) / step));
+        }
+
+        /// <summary>
+        /// Các index ở hàng TRƯỚC (row-1) chặn cell (row, e), map theo vị trí góc chuẩn hoá dọc cung.
+        /// Uniform → luôn 1:1 (chỉ <paramref name="a"/>). ArcLength → cell giữa có 2 index chặn
+        /// (<paramref name="a"/> và <paramref name="b"/>), cell đầu/cuối chỉ 1. b = -1 nếu không có.
+        /// </summary>
+        public static void FrontIndices(int curCount, int prevCount, int e, out int a, out int b)
+        {
+            a = -1; b = -1;
+            if (prevCount <= 0) return;
+            if (curCount <= 1 || prevCount <= 1) { a = 0; return; }
+
+            float s = Mathf.Clamp01(e / (float)(curCount - 1)); // vị trí chuẩn hoá dọc cung
+            float f = s * (prevCount - 1);
+            a = Mathf.Clamp(Mathf.FloorToInt(f), 0, prevCount - 1);
+            int c = Mathf.Clamp(Mathf.CeilToInt(f), 0, prevCount - 1);
+            if (c != a) b = c;
         }
 
         public int TotalCells()
@@ -98,9 +147,19 @@ namespace Wayfu.Lamkn
             return idx + e;
         }
 
-        /// <summary>Vị trí phần tử e trong 'count' phần tử, dãn ĐỀU theo chiều dài đường cong của hàng.</summary>
+        /// <summary>
+        /// Vị trí phần tử e trong 'count' phần tử của hàng row.
+        /// Arc: dãn ĐỀU theo chiều dài đường cong. Rect: lưới thẳng — cell dãn theo X quanh Center,
+        /// hàng sâu dần theo +Z (row 0 gần path nhất).
+        /// </summary>
         public Vector3 CellPosAt(int row, int e, int count)
         {
+            if (Shape == BlockGridShape.Rect)
+            {
+                float step = Mathf.Max(0.01f, BlockWidth + Spacing);
+                float lateral = (e - (count - 1) * 0.5f) * step; // canh giữa quanh Center
+                return Center + new Vector3(lateral, 0f, BaseRadius + row * RowSpacing);
+            }
             float total = RowLength(row);
             float target = count > 1 ? e * (total / (count - 1)) : total * 0.5f;
             return PosByLength(row, target, total);
