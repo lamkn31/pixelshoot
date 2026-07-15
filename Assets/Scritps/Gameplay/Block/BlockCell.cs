@@ -9,8 +9,13 @@ namespace Wayfu.Lamkn
     /// Mỗi ĐẠN tới trừ 1 block; hết block → báo GridBlockManager dồn các cell phía sau (yêu cầu #5, #9).
     /// Có <see cref="_pendingHits"/> để không bắn dư đạn khi nhiều gun cùng nhắm 1 cell.
     /// </summary>
-    public class BlockCell : MonoBehaviour
+    public class BlockCell : MonoBehaviour, IItemPool<BlockCell>
     {
+        [Tooltip("Node cha để gắn các block của stack (child 'BlocksContainer' trong prefab).")]
+        [SerializeField] private Transform blocksContainer;
+        [Tooltip("Bật khi cell đang nằm ở Ô GỐC của Spawner (child 'BlocksSpawnerIndicator').")]
+        [SerializeField] private GameObject spawnerIndicator;
+
         public BlockColor Color { get; private set; }
         public int BlockCol { get; private set; }
         public int Depth { get; private set; }
@@ -23,6 +28,9 @@ namespace Wayfu.Lamkn
         private Coroutine _moveRoutine;
         private int _pendingHits;
         private float _stackSpacing;
+        private Pooler<BlockCell> _pool;
+
+        public void OnInitializedInPool(Pooler<BlockCell> pool) => _pool = pool;
 
         public int StackCount => _blocks.Count;
         /// <summary>Số block chưa bị đạn "đặt chỗ" (đạn đang bay) — gun chỉ bắn khi còn &gt; 0.</summary>
@@ -36,22 +44,46 @@ namespace Wayfu.Lamkn
             BlockCol = data.BlockCol;
             Depth = data.SpawnerDepth;
             _pendingHits = 0;
+            ReleaseBlocks();                 // item pooled tái dùng: dọn stack cũ trước
+            ShowSpawnerIndicator(false);
 
             Fill(data.Color, Mathf.Max(1, data.BlockStackCt));
         }
 
-        // Dựng stack block cùng màu tại chỗ (dùng cho cả lần đầu lẫn khi Spawner đẩy cell kế ra).
+        /// <summary>Bật/tắt dấu hiệu "ô gốc Spawner" (ô cố định nhả cell ẩn ra).</summary>
+        public void ShowSpawnerIndicator(bool on)
+        {
+            if (spawnerIndicator != null) spawnerIndicator.SetActive(on);
+        }
+
+        // Dựng stack block cùng màu, gắn vào BlocksContainer của prefab (fallback: chính cell).
         private void Fill(BlockColor color, int n)
         {
             Color = color;
+            var parent = blocksContainer != null ? blocksContainer : transform;
             for (int j = 0; j < n; j++)
             {
                 var b = PoolManager.Instance.GetBlock();
-                b.transform.SetParent(transform);
+                b.transform.SetParent(parent);
                 b.transform.position = transform.position + Vector3.up * _stackSpacing * j; // stack theo Y
+                b.transform.rotation = transform.rotation;
                 b.Init(this, j, Color);
                 _blocks.Add(b);
             }
+        }
+
+        private void ReleaseBlocks()
+        {
+            foreach (var b in _blocks) if (b != null) b.Despawn();
+            _blocks.Clear();
+        }
+
+        /// <summary>Trả cell (và toàn bộ block trong nó) về pool — thay cho Destroy.</summary>
+        public void Despawn()
+        {
+            ReleaseBlocks();
+            if (_pool != null) _pool.Release(this);
+            else Destroy(gameObject);
         }
 
         /// <summary>Đặt chỗ 1 đạn đang bay tới cell này.</summary>

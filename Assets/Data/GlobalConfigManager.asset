@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1010f015958ac254482c0ba7f67024b4, type: 3}
+  m_Name: GlobalConfigManager
+  m_EditorClassIdentifier: 
+  listColor:
+  - typeColor: 1
+    color: {r: 1, g: 0, b: 0, a: 0}
+    matBlock: {fileID: 2100000, guid: b68986854468e8c448b0afa2fe535aa5, type: 2}
+    matGun: {fileID: 2100000, guid: 517749b390812bd40a28e73daeb878d2, type: 2}
+  - typeColor: 2
+    color: {r: 0.04830408, g: 1, b: 0, a: 0}
+    matBlock: {fileID: 2100000, guid: b28663055948f93498e799677866e5b6, type: 2}
+    matGun: {fileID: 2100000, guid: d6701c80eccfdfe418aa51720e22b098, type: 2}
+  - typeColor: 3
+    color: {r: 0, g: 0.19427729, b: 1, a: 0}
+    matBlock: {fileID: 2100000, guid: e9883398ee14092429bfe97265ee62cf, type: 2}
+    matGun: {fileID: 2100000, guid: e04dc5ce9828fb740b1f89eb312efd42, type: 2}
+  listEnviroment: []

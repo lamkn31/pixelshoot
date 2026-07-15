@@ -78,6 +78,7 @@ namespace Wayfu.Lamkn
                     }
                     gr.Rows.Add(row);
                 }
+                RefreshSpawnerIndicators(gr);
                 _grids.Add(gr);
             }
 
@@ -93,13 +94,17 @@ namespace Wayfu.Lamkn
             return q;
         }
 
+        // Sinh 1 cell TỪ BlockCellPrefab (qua pool); chính cell sẽ sinh block từ BlockPrefab trong Build().
         private BlockCell CreateCell(GridRuntime gr, string cellName, Vector3 pos, BlockCellData data)
         {
-            var go = new GameObject(cellName);
-            go.transform.SetParent(gr.Root);
-            go.transform.position = pos;
-            go.transform.rotation = Quaternion.Euler(0f, data.SpawnerDirectionAngleZ, 0f); // hướng dồn của cell
-            var cell = go.AddComponent<BlockCell>();
+            var cell = PoolManager.Instance.GetCell();
+            cell.name = cellName;
+            cell.transform.SetParent(gr.Root);
+            cell.transform.position = pos;
+            // Rect: lưới thẳng → mọi block rotation = 0. Arc: xoay theo hướng dồn của cell cho hợp cung.
+            cell.transform.rotation = gr.Data.Shape == BlockGridShape.Rect
+                ? Quaternion.identity
+                : Quaternion.Euler(0f, data.SpawnerDirectionAngleZ, 0f);
             cell.Build(data, gr.StackSpacing, this);
             return cell;
         }
@@ -182,7 +187,7 @@ namespace Wayfu.Lamkn
                     {
                         if (row[e] != cell) continue;
                         row[e] = null;
-                        if (cell != null) Destroy(cell.gameObject);
+                        if (cell != null) cell.Despawn(); // trả cell về pool (thay cho Destroy)
                         found = true;
                         break;
                     }
@@ -207,6 +212,25 @@ namespace Wayfu.Lamkn
                 if (!moved && !fed) break;
             }
             // Số hàng giữ NGUYÊN (không xoá hàng rỗng) để Row của SpawnerSource luôn trỏ đúng ô.
+            RefreshSpawnerIndicators(gr);
+        }
+
+        // Cell nằm ở Ô GỐC của Spawner đổi liên tục (cell cũ dồn đi, cell mới nhả ra) → mỗi lần dồn xong
+        // phải gắn lại dấu hiệu cho đúng cell đang đứng ở ô đó.
+        private static void RefreshSpawnerIndicators(GridRuntime gr)
+        {
+            if (gr.Sources.Count == 0) return;
+            foreach (var row in gr.Rows)
+                foreach (var c in row)
+                    if (c != null) c.ShowSpawnerIndicator(false);
+
+            foreach (var src in gr.Sources)
+            {
+                if (src.Row >= gr.Rows.Count) continue;
+                var row = gr.Rows[src.Row];
+                if (src.Col >= row.Length) continue;
+                if (row[src.Col] != null) row[src.Col].ShowSpawnerIndicator(true);
+            }
         }
 
         // Dồn 1 bước: cell ở hàng r tiến lên ô CHẶN nó ở hàng r-1 nếu ô đó trống — dùng đúng map góc của

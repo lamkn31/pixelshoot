@@ -45,6 +45,8 @@ namespace Wayfu.Lamkn
 
         [Header("Prefabs (optional — null thì fallback primitive, đều dùng Pooler)")]
         public Gun GunPrefab;
+        [Tooltip("Prefab 1 CELL (node chứa stack). Grid sinh cell từ đây, rồi cell sinh block từ BlockPrefab.")]
+        public BlockCell BlockCellPrefab;
         public Block BlockPrefab;
         public Bullet BulletPrefab;
 

@@ -20,4 +20,4 @@ MonoBehaviour:
   GunFireRange: 2
   FrontStationDistance: 0
   BulletSpeed: 100
-  BlockStackSpacing: 0.6
+  BlockStackSpacing: 1
