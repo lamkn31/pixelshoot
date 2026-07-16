@@ -797,7 +797,7 @@ MonoBehaviour:
       SpawnerDirectionAngleZ: 247.21085
     PendingRefill: []
   - Shape: 1
-    Center: {x: -1.2043486, y: 0, z: -28.483572}
+    Center: {x: -1.0959836, y: 0, z: -28.857279}
     Rotation: 8.2456255
     BaseRadius: 0.8478818
     Columns: 10

@@ -17,8 +17,8 @@ MonoBehaviour:
   NumberOfColors: 3
   MechanicNames: []
   PathWaypoints:
-  - {x: -0.0047946447, y: 0, z: -34.628166}
-  - {x: 0, y: 0, z: -2.430664}
+  - {x: 0.122956745, y: 0, z: -29.597141}
+  - {x: -0.19461444, y: 0, z: -7.6448326}
   IsClosed: 0
   CornerRadius: 3
   PathWidth: 2.8

@@ -47,6 +47,7 @@ namespace Wayfu.Lamkn
         private RoundedPolylineFollower _follower;
         private Quaternion _canonRestLocalRot = Quaternion.identity; // pose gốc của model nòng
         private float _aimYaw;                                       // góc lệch nòng so với thân gun
+        private int _lastLap;                                        // vòng path đã chạy, để reset target
 
         /// <summary>Target còn sống và đúng màu — object pooled có thể đã thành cell khác (Generation).</summary>
         private bool HasLiveTarget => _currentTarget != null && _currentTarget.Generation == _targetGen
@@ -96,6 +97,7 @@ namespace Wayfu.Lamkn
             // Reset trạng thái (item pooled có thể tái dùng).
             _fireTimer = 0f;
             _currentTarget = null;
+            _lastLap = 0;
             if (_moveRoutine != null) { StopCoroutine(_moveRoutine); _moveRoutine = null; }
 
             // Material lấy từ GlobalConfigManager theo TypeColor (không tô material.color nữa).
@@ -148,6 +150,7 @@ namespace Wayfu.Lamkn
         /// <summary>Bật RoundedPolylineFollower cho gun chạy vòng path liên tục từ startDistance (yêu cầu #3).</summary>
         public void DeployOnPath(RoundedPolylinePath path, float startDistance, float speed)
         {
+            _lastLap = 0; // follower.Init đưa LapCount về 0 — mốc đếm vòng bắt đầu từ đây
             if (_follower != null) { _follower.Init(path, startDistance, speed); _follower.enabled = true; }
             else if (path != null) transform.position = path.GetPointAtDistance(startDistance); // gun ko có follower
         }
@@ -155,6 +158,12 @@ namespace Wayfu.Lamkn
         private void Update()
         {
             if (_state != GunState.OnPath) return;
+
+            // Chạy trọn 1 vòng về lại điểm vào → BỎ target đang bám, chọn lại từ đầu. Range/góc chỉ lọc
+            // lúc CHỌN target nên không reset thì gun ôm mãi 1 cell ở tận đầu kia path, đi hết vòng này
+            // qua vòng khác vẫn bắn nó thay vì ăn cell ngay trước mặt.
+            int lap = _follower != null ? _follower.LapCount : 0;
+            if (lap != _lastLap) { _lastLap = lap; _currentTarget = null; }
 
             // Bám target tới khi cell bị phá HẾT rồi mới chọn cell khác (yêu cầu: dứt điểm từng cell).
             // Cell là item POOLED: object có thể bị tái dùng cho cell mới ngay trong cùng frame (nhả ở ô

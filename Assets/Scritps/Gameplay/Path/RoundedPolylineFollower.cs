@@ -11,15 +11,32 @@ public class RoundedPolylineFollower : MonoBehaviour
     public float moveSpeed = 3.0f; // Tốc độ di chuyển thực tế ổn định (mét/giây)
 
     private float currentDistance = 0f; // Khoảng cách vật thể đã đi được trên đường
+    private float startDistance = 0f;   // Điểm VÀO path — mốc đếm vòng
 
     /// <summary>Arc-length hiện tại trên path (chưa wrap). PathManager đọc để tính khoảng cách giữa các gun.</summary>
     public float CurrentDistance => currentDistance;
+
+    /// <summary>
+    /// Số vòng đã chạy TRỌN quanh path tính từ điểm vào. Tăng 1 mỗi lần về lại đúng chỗ xuất phát.
+    /// Tính thẳng từ currentDistance (biến này cộng dồn vô hạn, chỉ GetPointAtDistance mới wrap) nên
+    /// không cần giữ thêm state.
+    /// </summary>
+    public int LapCount
+    {
+        get
+        {
+            if (targetPath == null) return 0;
+            float total = targetPath.TotalLength;
+            return total > 1e-4f ? Mathf.FloorToInt((currentDistance - startDistance) / total) : 0;
+        }
+    }
 
     /// <summary>Gắn path + vị trí bắt đầu + tốc độ (gọi khi gun được deploy lên path).</summary>
     public void Init(RoundedPolylinePath path, float startDistance, float speed)
     {
         targetPath = path;
         currentDistance = startDistance;
+        this.startDistance = startDistance;
         moveSpeed = speed;
         if (targetPath != null) transform.position = targetPath.GetPointAtDistance(currentDistance);
     }
