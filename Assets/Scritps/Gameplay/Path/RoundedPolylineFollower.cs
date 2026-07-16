@@ -12,6 +12,9 @@ public class RoundedPolylineFollower : MonoBehaviour
 
     private float currentDistance = 0f; // Khoảng cách vật thể đã đi được trên đường
 
+    /// <summary>Arc-length hiện tại trên path (chưa wrap). PathManager đọc để tính khoảng cách giữa các gun.</summary>
+    public float CurrentDistance => currentDistance;
+
     /// <summary>Gắn path + vị trí bắt đầu + tốc độ (gọi khi gun được deploy lên path).</summary>
     public void Init(RoundedPolylinePath path, float startDistance, float speed)
     {

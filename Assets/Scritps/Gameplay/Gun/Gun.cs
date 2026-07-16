@@ -12,14 +12,24 @@ namespace Wayfu.Lamkn
     /// </summary>
     public class Gun : MonoBehaviour, IItemPool<Gun>
     {
-        private enum GunState { InSlot, OnPath, Dead }
+        private enum GunState { InSlot, Queued, OnPath, Dead }
 
         public GunData Data { get; private set; }
         public TypeColor Color => Data.Color;
         public GunSlot Slot { get; private set; }
 
-        /// <summary>Khoảng cách tích luỹ trên path (PathManager ghi/đọc).</summary>
-        public float Distance;
+        [Header("Ngắm bắn")]
+        [Tooltip("Nòng súng: xoay mặt về target khi có, không có thì trùng hướng path. Bỏ trống sẽ tự tìm " +
+                 "child có tên chứa 'canon'. Thân 'machine' không cần gán — nó bám hướng path theo root.")]
+        [SerializeField] private Transform canon;
+        [Tooltip("Điểm đạn xuất phát. Nên đặt ở đầu nòng (child của canon). Bỏ trống → dùng canon, " +
+                 "không có canon → gốc gun.")]
+        [SerializeField] private Transform muzzle;
+        [Tooltip("Tốc độ xoay nòng (độ/giây). Để 0 = quay tức thì sang target.")]
+        [SerializeField] private float canonTurnSpeed = 540f;
+
+        /// <summary>Arc-length hiện tại trên path — PathManager đọc để giữ khoảng cách giữa các gun.</summary>
+        public float PathDistance => _follower != null ? _follower.CurrentDistance : 0f;
         public bool IsOnPath => _state == GunState.OnPath;
 
         private GunState _state = GunState.InSlot;
@@ -33,14 +43,28 @@ namespace Wayfu.Lamkn
         private TextMesh _label;
         private Coroutine _moveRoutine;
         private Pooler<Gun> _pool;
+        private RoundedPolylineFollower _follower;
+        private Quaternion _canonRestLocalRot = Quaternion.identity; // pose gốc của model nòng
+        private float _aimYaw;                                       // góc lệch nòng so với thân gun
+
+        /// <summary>Target còn sống và đúng màu — object pooled có thể đã thành cell khác (Generation).</summary>
+        private bool HasLiveTarget => _currentTarget != null && _currentTarget.Generation == _targetGen
+                                      && !_currentTarget.IsEmpty && _currentTarget.Color == Data.Color;
+
+        /// <summary>Điểm xuất phát của đạn: muzzle → canon → gốc gun.</summary>
+        private Vector3 MuzzlePosition =>
+            muzzle != null ? muzzle.position : (canon != null ? canon.position : transform.position);
 
         public void OnInitializedInPool(Pooler<Gun> pool) => _pool = pool;
 
         private void Awake()
         {
             // Tắt follower khi ở slot; PathManager bật lại (DeployOnPath) khi gun được click lên path.
-            var follower = GetComponentInChildren<RoundedPolylineFollower>(true);
-            if (follower != null) follower.enabled = false;
+            _follower = GetComponentInChildren<RoundedPolylineFollower>(true);
+            if (_follower != null) _follower.enabled = false;
+
+            if (canon == null) canon = FindChildByName("canon");
+            if (canon != null) _canonRestLocalRot = canon.localRotation;
 
             // Collider của prefab thường nằm ở CHILD (vd "Model") → OnMouseDown gửi tới child, không tới
             // script Gun ở root. Gắn relay lên mọi collider để forward click về đây (yêu cầu click→deploy).
@@ -50,6 +74,14 @@ namespace Wayfu.Lamkn
                 if (relay == null) relay = col.gameObject.AddComponent<GunClickRelay>();
                 relay.Owner = this;
             }
+        }
+
+        private Transform FindChildByName(string keyword)
+        {
+            foreach (var t in GetComponentsInChildren<Transform>(true))
+                if (t != transform && t.name.IndexOf(keyword, System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    return t;
+            return null;
         }
 
         public void Init(GunData data, float fireInterval, float fireRange, float bulletSpeed)
@@ -73,9 +105,12 @@ namespace Wayfu.Lamkn
             UpdateLabel();
             _state = GunState.InSlot;
 
+            // Item pooled tái dùng: trả nòng về pose gốc, không thì nó giữ góc ngắm của lượt trước.
+            _aimYaw = 0f;
+            if (canon != null) canon.localRotation = _canonRestLocalRot;
+
             // Item pooled tái dùng: tắt follower để gun đứng yên trong slot (bật lại khi deploy).
-            var follower = GetComponentInChildren<RoundedPolylineFollower>(true);
-            if (follower != null) follower.enabled = false;
+            if (_follower != null) _follower.enabled = false;
         }
 
         public void SetSlot(GunSlot s) => Slot = s;
@@ -88,19 +123,30 @@ namespace Wayfu.Lamkn
 
         private void OnMouseDown() => HandleClick();
 
+        /// <summary>Tách khỏi slot nhưng CHƯA lên path — gun đang xếp hàng chờ đủ khoảng cách.</summary>
+        public void OnQueued()
+        {
+            _state = GunState.Queued;
+            Slot = null;
+            transform.SetParent(null);
+            _fireTimer = 0f;
+        }
+
         public void OnDeployed()
         {
             _state = GunState.OnPath;
             Slot = null;
             transform.SetParent(null);
             _fireTimer = 0f;
+            // Gun chờ trong queue được MoveTo tới chỗ đứng; coroutine đó vẫn ghi transform.position mỗi
+            // frame → phải dừng, không thì nó giành position với follower.
+            if (_moveRoutine != null) { StopCoroutine(_moveRoutine); _moveRoutine = null; }
         }
 
         /// <summary>Bật RoundedPolylineFollower cho gun chạy vòng path liên tục từ startDistance (yêu cầu #3).</summary>
         public void DeployOnPath(RoundedPolylinePath path, float startDistance, float speed)
         {
-            var follower = GetComponentInChildren<RoundedPolylineFollower>(true);
-            if (follower != null) { follower.Init(path, startDistance, speed); follower.enabled = true; }
+            if (_follower != null) { _follower.Init(path, startDistance, speed); _follower.enabled = true; }
             else if (path != null) transform.position = path.GetPointAtDistance(startDistance); // gun ko có follower
         }
 
@@ -111,8 +157,7 @@ namespace Wayfu.Lamkn
             // Bám target tới khi cell bị phá HẾT rồi mới chọn cell khác (yêu cầu: dứt điểm từng cell).
             // Cell là item POOLED: object có thể bị tái dùng cho cell mới ngay trong cùng frame (nhả ở ô
             // sâu) → check Generation, lệch = target cũ đã chết, không bám theo object ra ô mới.
-            if (_currentTarget == null || _currentTarget.Generation != _targetGen
-                || _currentTarget.IsEmpty || _currentTarget.Color != Data.Color)
+            if (!HasLiveTarget)
             {
                 _currentTarget = GridBlockManager.Instance?.FindTargetCell(Data.Color, transform.position, _fireRange);
                 _targetGen = _currentTarget != null ? _currentTarget.Generation : 0;
@@ -126,6 +171,33 @@ namespace Wayfu.Lamkn
                 Fire(_currentTarget);
                 _fireTimer = _fireInterval;
             }
+        }
+
+        /// <summary>
+        /// Xoay nòng về target (không có target thì trả nòng về hướng path). Chạy ở LateUpdate vì
+        /// RoundedPolylineFollower set rotation của root trong Update — phải đợi nó xong mới tính đúng
+        /// góc lệch giữa thân gun và target, không thì nòng giật theo thứ tự Update.
+        /// </summary>
+        private void LateUpdate()
+        {
+            if (canon == null || _state != GunState.OnPath) return;
+
+            float desiredYaw = 0f; // 0 = nòng trùng hướng thân gun = hướng path
+            if (HasLiveTarget)
+            {
+                Vector3 dir = _currentTarget.transform.position - canon.position;
+                dir.y = 0f; // chỉ xoay trên sàn XZ, không chúc nòng lên/xuống
+                if (dir.sqrMagnitude > 1e-6f)
+                    desiredYaw = Vector3.SignedAngle(transform.forward, dir, Vector3.up);
+            }
+
+            _aimYaw = canonTurnSpeed > 0f
+                ? Mathf.MoveTowardsAngle(_aimYaw, desiredYaw, canonTurnSpeed * Time.deltaTime)
+                : desiredYaw;
+
+            // Xoay quanh Y theo GÓC LỆCH rồi mới nhân pose gốc của model → không phụ thuộc model nòng
+            // quay mặt về trục local nào (canon fbx có offset riêng, machine thì lệch -90 quanh Z).
+            canon.rotation = Quaternion.AngleAxis(_aimYaw, Vector3.up) * transform.rotation * _canonRestLocalRot;
         }
 
         /// <summary>Cell có nằm trong vòng PHÁT HIỆN không (hình tròn trên sàn XZ, bỏ qua chênh lệch Y).</summary>
@@ -143,7 +215,7 @@ namespace Wayfu.Lamkn
             cell.ReserveHit();
             var bullet = PoolManager.Instance != null ? PoolManager.Instance.GetBullet() : null;
             if (bullet != null)
-                bullet.Launch(transform.position, cell, _bulletSpeed, Data.Color);
+                bullet.Launch(MuzzlePosition, cell, _bulletSpeed, Data.Color);
             else
             {
                 cell.ApplyHit(); // fallback không có pool

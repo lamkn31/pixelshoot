@@ -6,7 +6,8 @@ namespace Wayfu.Lamkn
     /// <summary>
     /// Dựng đường path (RoundedPolylinePath + mặt đường LineRenderer) từ LevelData và quản lý các gun
     /// chạy trên đó. Mọi gun vào path tại ĐIỂM ĐẦU (FrontStationDistance, mặc định 0) rồi chạy loop liên
-    /// tục bằng RoundedPolylineFollower — khoảng cách giữa các gun là do thời điểm click quyết định.
+    /// tục bằng RoundedPolylineFollower. Gun chỉ được vào khi điểm đầu còn trống ít nhất
+    /// GameSettings.GunSpacing; chưa đủ thì xếp hàng chờ ngay trước điểm đầu.
     /// Thua khi đủ MaxGunOnPath mà không gun nào bắn được.
     /// </summary>
     public class PathManager : Singleton<PathManager>
@@ -17,15 +18,25 @@ namespace Wayfu.Lamkn
         [Tooltip("Material mặt đường. Bỏ trống thì giữ material đang gán trên LineRenderer.")]
         [SerializeField] private Material pathMaterial;
 
+        [Header("Queue")]
+        [Tooltip("Thời gian (giây) gun bay từ slot ra chỗ xếp hàng, và dồn lên khi hàng chờ ngắn lại.")]
+        [SerializeField] private float queueMoveDuration = 0.15f;
+
         private RoundedPolylinePath _path;
-        private readonly List<Gun> _guns = new List<Gun>();   // [0] = gun vào trước nhất
+        private readonly List<Gun> _guns = new List<Gun>();    // [0] = gun vào trước nhất
+        private readonly List<Gun> _queue = new List<Gun>();   // [0] = gun sẽ vào path kế tiếp
         private float _gunSpeed = 3f;
+        private float _minGunGap = 1.2f;     // khoảng cách arc-length tối thiểu giữa 2 gun
         private float _frontStationDistance; // điểm VÀO path của mọi gun (0 = đầu path)
         private int _maxGunOnPath = 5;
 
-        public bool IsFull => _guns.Count >= _maxGunOnPath;
-        public bool CanAccept => _guns.Count < _maxGunOnPath;
+        /// <summary>Gun đang chờ cũng chiếm chỗ — không cho click quá sức chứa của path.</summary>
+        private int Reserved => _guns.Count + _queue.Count;
+
+        public bool IsFull => Reserved >= _maxGunOnPath;
+        public bool CanAccept => Reserved < _maxGunOnPath;
         public int GunCount => _guns.Count;
+        public int QueueCount => _queue.Count;
         public RoundedPolylinePath Path => _path;
 
         /// <summary>Dựng path từ level rồi nạp config gun. Gọi thay cho Init(path) cũ.</summary>
@@ -37,6 +48,7 @@ namespace Wayfu.Lamkn
             _gunSpeed = gs != null ? gs.GunSpeed : 3f;
             _maxGunOnPath = gs != null ? gs.MaxGunOnPath : 5;
             _frontStationDistance = gs != null ? gs.FrontStationDistance : 0f;
+            _minGunGap = gs != null ? Mathf.Max(0f, gs.GunSpacing) : 1.2f;
 
             _path = CreatePath(level);
             ApplyPathLine(_path);
@@ -98,25 +110,98 @@ namespace Wayfu.Lamkn
             pathLine.widthMultiplier = Mathf.Max(0f, width);
         }
 
-        public void AddGun(Gun gun)
+        /// <summary>
+        /// Gun vừa rời slot: vào path ngay nếu điểm đầu còn trống, không thì xếp hàng chờ.
+        /// Queue là FIFO — hàng chờ còn người thì gun mới luôn phải đứng sau, kể cả lúc đầu path trống.
+        /// </summary>
+        public void RequestDeploy(Gun gun)
+        {
+            if (gun == null) return;
+            gun.OnQueued();
+
+            if (_queue.Count == 0 && IsEntryClear()) { Deploy(gun); return; }
+
+            _queue.Add(gun);
+            RestageQueue();
+        }
+
+        private void Update()
+        {
+            if (_queue.Count == 0 || !IsEntryClear()) return;
+
+            // Mỗi frame chỉ thả 1 gun: gun vừa vào đứng ngay điểm đầu nên IsEntryClear() lập tức false.
+            var gun = _queue[0];
+            _queue.RemoveAt(0);
+            if (gun != null) Deploy(gun);
+            RestageQueue();
+        }
+
+        private void Deploy(Gun gun)
         {
             _guns.Add(gun);
+            gun.OnDeployed();
             // MỌI gun đều vào path từ ĐIỂM ĐẦU (distance = FrontStationDistance, mặc định 0 = pos 0 của
-            // path) rồi chạy tới. Khoảng cách giữa các gun sinh ra từ thời điểm click, không cộng offset
+            // path) rồi chạy tới. Khoảng cách giữa các gun do IsEntryClear() bảo đảm, không cộng offset
             // theo lượt deploy nữa.
-            float startDist = _frontStationDistance;
-            gun.Distance = startDist;
-            gun.DeployOnPath(_path, startDist, _gunSpeed); // follower chạy vòng liên tục
+            gun.DeployOnPath(_path, _frontStationDistance, _gunSpeed); // follower chạy vòng liên tục
+        }
+
+        /// <summary>Điểm vào path có gun nào đứng gần hơn _minGunGap không.</summary>
+        private bool IsEntryClear()
+        {
+            if (_guns.Count >= _maxGunOnPath) return false;
+            if (_path == null || _minGunGap <= 0f) return true;
+
+            foreach (var g in _guns)
+            {
+                if (g == null) continue;
+                if (ArcGap(_frontStationDistance, g.PathDistance, _path.TotalLength) < _minGunGap) return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Khoảng cách NGẮN NHẤT giữa 2 vị trí trên path, đo cả 2 chiều. Path luôn chạy vòng
+        /// (GetPointAtDistance tự Mathf.Repeat) nên gun sắp lượn hết vòng về tới điểm đầu cũng phải tính
+        /// là "đang chắn cửa" — không thì thả gun mới đè lên nó.
+        /// </summary>
+        private static float ArcGap(float a, float b, float total)
+        {
+            if (total <= 1e-4f) return Mathf.Abs(a - b);
+            float d = Mathf.Repeat(b - a, total);
+            return Mathf.Min(d, total - d);
+        }
+
+        /// <summary>Xếp hàng chờ ngay TRƯỚC điểm vào path, cách nhau _minGunGap.</summary>
+        private void RestageQueue()
+        {
+            for (int i = 0; i < _queue.Count; i++)
+            {
+                var g = _queue[i];
+                if (g == null || _path == null) continue;
+
+                float d = _frontStationDistance - (i + 1) * _minGunGap;
+                Vector3 pos = _path.GetPointAtDistance(d);
+                g.MoveTo(pos, queueMoveDuration);
+
+                // Follower đang tắt lúc chờ → tự quay mặt gun theo hướng path để lát nữa vào đường không giật.
+                Vector3 dir = _path.GetPointAtDistance(d + 0.05f) - pos;
+                dir.y = 0f;
+                if (dir.sqrMagnitude > 1e-6f)
+                    g.transform.rotation = Quaternion.LookRotation(dir.normalized, Vector3.up);
+            }
         }
 
         public void RemoveGun(Gun gun)
         {
             _guns.Remove(gun); // gun khác vẫn chạy loop giữ nguyên khoảng cách — để lại 1 chỗ trống
+            if (_queue.Remove(gun)) RestageQueue();
         }
 
         public void Clear()
         {
             _guns.Clear(); // gun trả về pool qua PoolManager.ReturnAll khi rebuild
+            _queue.Clear();
             // pathLine nằm trên scene (không bị destroy cùng GunPath) → phải xoá điểm của level cũ.
             if (pathLine != null) pathLine.positionCount = 0;
             if (_path != null) { Destroy(_path.gameObject); _path = null; }

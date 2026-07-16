@@ -77,9 +77,8 @@ namespace Wayfu.Lamkn
             if (slot == null || slot.FrontGun != gun) return;              // chỉ gun đầu slot
             if (PathManager.Instance == null || !PathManager.Instance.CanAccept) return; // path đã đầy
 
-            slot.RemoveFront();
-            gun.OnDeployed();                 // tách khỏi slot, chuyển sang OnPath
-            PathManager.Instance.AddGun(gun); // gán distance + animate lên path
+            slot.RemoveFront();                     // gun sau dồn lên, click tiếp được ngay
+            PathManager.Instance.RequestDeploy(gun); // vào path luôn, hoặc xếp hàng chờ đủ khoảng cách
             GameController.Instance?.OnBoardChanged();
         }
 

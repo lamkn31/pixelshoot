@@ -16,6 +16,7 @@ namespace Wayfu.Lamkn
         private float _speed = 14f;
         private bool _active;
         private Renderer _renderer;
+        private TrailRenderer _trail;
 
         public void OnInitializedInPool(Pooler<Bullet> pool) => _pool = pool;
 
@@ -24,19 +25,38 @@ namespace Wayfu.Lamkn
             // Bullet di chuyển bằng code, không cần collider.
             var col = GetComponent<Collider>();
             if (col != null) Destroy(col);
-            _renderer = GetComponentInChildren<Renderer>();
+            _trail = GetComponentInChildren<TrailRenderer>(true);
+            _renderer = FindBodyRenderer();
+        }
+
+        /// <summary>
+        /// Renderer của thân đạn để tô màu. TrailRenderer CŨNG là Renderer nên phải loại nó ra —
+        /// không thì chỉ cần kéo "Trail" lên trên model trong prefab là màu đi tô nhầm vào vệt đạn.
+        /// </summary>
+        private Renderer FindBodyRenderer()
+        {
+            foreach (var r in GetComponentsInChildren<Renderer>(true))
+                if (!(r is TrailRenderer)) return r;
+            return null;
         }
 
         public void Launch(Vector3 start, BlockCell target, float speed, TypeColor color)
         {
             transform.position = start;
+
+            // Bullet là item POOLED: TrailRenderer giữ nguyên các điểm của lượt bắn TRƯỚC khi object bị
+            // tắt/bật lại. Pool bật đạn ở vị trí cũ (chỗ block vừa bị phá) rồi Launch mới teleport nó về
+            // nòng → trail nối thẳng 1 vệt từ block cũ về gun. Clear() phải gọi SAU khi đã set position
+            // mới, không thì trail vẫn mọc lại từ điểm cũ.
+            if (_trail != null) _trail.Clear();
+
             _cell = target;
             _cellGen = target != null ? target.Generation : 0;
             _speed = speed;
             _active = true;
 
             // Material lấy từ GlobalConfigManager theo TypeColor.
-            if (_renderer == null) _renderer = GetComponentInChildren<Renderer>();
+            if (_renderer == null) _renderer = FindBodyRenderer();
             var mat = GlobalConfigManager.MaterialOf(color, TypeObject.Bullet);
             if (_renderer != null && mat != null) _renderer.sharedMaterial = mat;
         }
