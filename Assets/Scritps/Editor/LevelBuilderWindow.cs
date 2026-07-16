@@ -20,6 +20,7 @@ namespace Wayfu.Lamkn
         private LevelData _target;
         private SerializedObject _so;
         private SerializedObject _gsSO;
+        private SerializedObject _listSO;
 
         private string _levelsFolder = "Assets";
         private readonly List<LevelData> _levels = new List<LevelData>();
@@ -28,6 +29,8 @@ namespace Wayfu.Lamkn
 
         private Vector2 _leftScroll, _rightScroll;
         private bool _showPath = true, _showSlots = true, _showBlocks = true, _showFrame = true, _showRange = true, _showDir = true;
+        // Ghost hàng đợi của cell Spawner — tắt cho đỡ rối khi không sửa spawner.
+        private bool _showQueue = true;
 
         // Bề rộng 2 panel — kéo được.
         private float _leftW = 250f, _rightW = 360f;
@@ -58,6 +61,14 @@ namespace Wayfu.Lamkn
         // Màu tô cell bằng click trong khung giữa. None → click để CHỌN xem/sửa thông số.
         private TypeColor _paintColor = TypeColor.None;
 
+        // Brush tô màu: giữ chuột rê qua nhiều cell thay vì chấm từng ô.
+        private bool _painting;
+        private Vector2 _lastPaintPos;
+
+        // Live sync: sửa grid/path lúc đang Play → dựng lại level ngay để thấy vị trí thật.
+        private bool _liveSync = true;
+        private bool _liveDirty;
+
         // Đối tượng đang chọn trong khung giữa (chỉ khi Paint = None).
         private readonly List<(int grid, int cell)> _selCells = new List<(int, int)>();
         private int _selSlot = -1, _selGun = -1;    // gun (chọn 1)
@@ -75,6 +86,8 @@ namespace Wayfu.Lamkn
         private bool _marqueeOn;
         private readonly List<(Rect rect, int grid, int flat)> _hitCells = new List<(Rect, int, int)>();
         private readonly List<(Rect rect, int slot, int gun)> _hitGuns = new List<(Rect, int, int)>();
+        // Ghost hàng đợi của cell Spawner. qi = index trong Queue; qi == Queue.Count là ô "+" (thêm mới).
+        private readonly List<(Rect rect, int grid, int flat, int qi)> _hitQueue = new List<(Rect, int, int, int)>();
 
         private bool IsCellSelected(int gi, int flat) => _selCells.Contains((gi, flat));
 
@@ -155,7 +168,25 @@ namespace Wayfu.Lamkn
             DrawRightPanel();
             EditorGUILayout.EndHorizontal();
 
-            if (_target != null && _so != null) _so.ApplyModifiedProperties();
+            if (_target != null && _so != null && _so.ApplyModifiedProperties()) _liveDirty = true;
+            TryLiveRebuild();
+        }
+
+        private bool IsDragging => _dragGrid >= 0 || _dragWaypoint >= 0 || _dragCellGrid >= 0 || _painting || _panning;
+
+        /// <summary>
+        /// Sửa grid/path/cell lúc đang Play → dựng lại level để thấy ngay vị trí THẬT trong runtime,
+        /// khỏi phải thoát Play rồi vào lại. Đợi thả chuột mới dựng: kéo handle sinh thay đổi mỗi frame,
+        /// dựng lại cả board 60 lần/giây thì giật và reset gameplay liên tục.
+        /// </summary>
+        private void TryLiveRebuild()
+        {
+            if (!_liveDirty || IsDragging) return;
+            _liveDirty = false;
+            if (!_liveSync || !Application.isPlaying || _target == null) return;
+            // Không dùng LevelController.Instance: Singleton.Instance log error khi scene chưa có nó.
+            var lc = Object.FindObjectOfType<LevelController>();
+            if (lc != null && lc.Level == _target) lc.Build();
         }
 
         // Thanh kéo dọc để resize panel. sign = chiều tăng width theo delta.x của chuột.
@@ -195,8 +226,14 @@ namespace Wayfu.Lamkn
             _showSlots = GUILayout.Toggle(_showSlots, "Slots", EditorStyles.toolbarButton);
             _showBlocks = GUILayout.Toggle(_showBlocks, "Grids", EditorStyles.toolbarButton);
             _showDir = GUILayout.Toggle(_showDir, "Dir", EditorStyles.toolbarButton);
+            _showQueue = GUILayout.Toggle(_showQueue, new GUIContent("Queue",
+                "Hiện các cell hàng đợi nằm SAU cell Spawner (ô mờ + ô \"+\"). Tắt cho đỡ rối khi không sửa spawner — " +
+                "tắt rồi thì click cũng không còn trúng chúng nữa."), EditorStyles.toolbarButton);
             _showFrame = GUILayout.Toggle(_showFrame, "Cam", EditorStyles.toolbarButton);
             _showRange = GUILayout.Toggle(_showRange, "Range", EditorStyles.toolbarButton);
+            _liveSync = GUILayout.Toggle(_liveSync, new GUIContent("Live",
+                "Đang Play mà sửa grid/path/cell thì dựng lại level ngay trong runtime (thả chuột mới dựng). " +
+                "Chỉ chạy khi LevelController đang gán ĐÚNG level đang mở."), EditorStyles.toolbarButton);
             if (GUILayout.Button("Fit", EditorStyles.toolbarButton)) { _zoom = 1f; _pan = Vector2.zero; Repaint(); }
             if (GUILayout.Button("Add Preview", EditorStyles.toolbarButton) && _target != null) AddPreviewToScene();
             if (GUILayout.Button("Save", EditorStyles.toolbarButton)) AssetDatabase.SaveAssets();
@@ -228,6 +265,9 @@ namespace Wayfu.Lamkn
             DrawGameSettings();
 
             EditorGUILayout.Space(4);
+            DrawLevelList();
+
+            EditorGUILayout.Space(4);
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("+ Level")) CreateNewLevel();
             if (GUILayout.Button("Reload")) RefreshLevels();
@@ -252,6 +292,97 @@ namespace Wayfu.Lamkn
             EditorGUILayout.EndVertical();
         }
 
+        // Thứ tự chơi: LevelController lấy level theo index trong asset này (UserProgress.currentLevelIndex).
+        private void DrawLevelList()
+        {
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.LabelField("LEVEL LIST (thứ tự chơi)", EditorStyles.boldLabel);
+
+            var list = LevelList.Instance;
+            EditorGUILayout.ObjectField("Asset", list, typeof(LevelList), false);
+            if (list == null)
+            {
+                EditorGUILayout.HelpBox("Chưa có LevelList. Tạo asset để LevelController load level theo index.",
+                    MessageType.Info);
+                if (GUILayout.Button("Create LevelList")) CreateLevelList();
+                EditorGUILayout.EndVertical();
+                return;
+            }
+
+            if (_listSO == null || _listSO.targetObject != list) _listSO = new SerializedObject(list);
+            _listSO.Update();
+            var levels = _listSO.FindProperty("Levels");
+
+            EditorGUILayout.HelpBox($"{list.Count} level. Index 0 = level đầu. Chơi hết list thì LẶP LẠI, "
+                + "bỏ qua level có bật Skip Level Loop (level tutorial chỉ chơi 1 lần).", MessageType.None);
+
+            int pend = -1; ListOp op = ListOp.None;
+            for (int i = 0; i < levels.arraySize; i++)
+            {
+                var el = levels.GetArrayElementAtIndex(i);
+                var lv = el.objectReferenceValue as LevelData;
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField(i.ToString(), GUILayout.Width(18));
+                // Bấm tên = mở level đó trong tool; ô trống thì gán bằng ObjectField.
+                if (lv != null)
+                {
+                    bool sel = lv == _target;
+                    string tag = lv.SkipLevelLoop ? " (skip loop)" : "";
+                    if (GUILayout.Toggle(sel, lv.name + tag, "Button") && !sel) Select(lv);
+                }
+                else el.objectReferenceValue = EditorGUILayout.ObjectField(null, typeof(LevelData), false);
+                var o = MiniButtons(i, levels.arraySize);
+                if (o != ListOp.None) { pend = i; op = o; }
+                EditorGUILayout.EndHorizontal();
+            }
+
+            EditorGUILayout.BeginHorizontal();
+            using (new EditorGUI.DisabledScope(_target == null || list.IndexOf(_target) >= 0))
+                if (GUILayout.Button("+ Level đang mở")) levels.GetArrayElementAtIndex(AddArray(levels)).objectReferenceValue = _target;
+            if (GUILayout.Button(new GUIContent("Fill from folder",
+                "Nạp mọi LevelData trong Levels Folder theo thứ tự tên, ghi đè list hiện tại.")))
+                FillLevelListFromFolder(levels);
+            if (GUILayout.Button("Clear")) levels.arraySize = 0;
+            EditorGUILayout.EndHorizontal();
+
+            if (pend >= 0) ApplyOp(levels, pend, op);
+            _listSO.ApplyModifiedProperties();
+
+            // Đang Play: nhảy thẳng tới level đang mở để xem ngay, không cần đợi thắng từng màn.
+            using (new EditorGUI.DisabledScope(!Application.isPlaying || _target == null))
+                if (GUILayout.Button("▶ Play level đang mở (runtime)")) PlayTargetNow(list);
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void CreateLevelList()
+        {
+            const string dir = "Assets/Resources";
+            if (!AssetDatabase.IsValidFolder(dir)) AssetDatabase.CreateFolder("Assets", "Resources");
+            var asset = CreateInstance<LevelList>();
+            foreach (var lv in _levels) if (lv != null) asset.Levels.Add(lv);
+            AssetDatabase.CreateAsset(asset, dir + "/LevelList.asset");
+            AssetDatabase.SaveAssets();
+            EditorGUIUtility.PingObject(asset);
+        }
+
+        private void FillLevelListFromFolder(SerializedProperty levels)
+        {
+            RefreshLevels();
+            levels.arraySize = _levels.Count;
+            for (int i = 0; i < _levels.Count; i++) levels.GetArrayElementAtIndex(i).objectReferenceValue = _levels[i];
+        }
+
+        // Level chưa nằm trong list thì ghim thẳng qua SetLevel — vẫn xem được mà không phải sửa list.
+        private void PlayTargetNow(LevelList list)
+        {
+            var lc = Object.FindObjectOfType<LevelController>();
+            if (lc == null) { Debug.LogWarning("[Level Tool] Scene không có LevelController."); return; }
+            int idx = list.IndexOf(_target);
+            if (idx >= 0) lc.LoadLevel(idx);
+            else { lc.SetLevel(_target); lc.Build(); }
+        }
+
         private void DrawGameSettings()
         {
             EditorGUILayout.BeginVertical("box");
@@ -267,8 +398,8 @@ namespace Wayfu.Lamkn
             if (_gsSO == null || _gsSO.targetObject != gs) _gsSO = new SerializedObject(gs);
             _gsSO.Update();
             foreach (var name in new[] { "SlotGunSpacing", "MaxGunOnPath", "GunSpeed", "GunSpacing",
-                "FireInterval", "GunFireRange", "FrontStationDistance", "BulletSpeed", "BlockStackSpacing",
-                "BlockCollapseDuration" })
+                "FireInterval", "GunFireRange", "GunFireAngle", "FrontStationDistance", "BulletSpeed",
+                "BlockStackSpacing", "BlockCollapseDuration" })
                 EditorGUILayout.PropertyField(_gsSO.FindProperty(name));
             _gsSO.ApplyModifiedProperties();
             EditorGUILayout.EndVertical();
@@ -387,23 +518,43 @@ namespace Wayfu.Lamkn
                 }
             }
 
-            // Vòng PHÁT HIỆN của gun tại ĐIỂM VÀO path — mọi gun đều xuất phát từ đây rồi chạy dọc path
-            // (không phải điều kiện bắn; xem GridBlockManager.FindTargetCell).
+            // Quạt PHÁT HIỆN của gun tại ĐIỂM VÀO path — mọi gun đều xuất phát từ đây rồi chạy dọc path
+            // (không phải điều kiện bắn; xem GridBlockManager.FindTargetCell). Quạt mở GunFireAngle độ
+            // quanh HƯỚNG PATH tại điểm vào — đúng như runtime, vì thân gun luôn quay theo đường ray.
+            // GunFireAngle = 360 thì vẽ vòng tròn như cũ.
             if (_showRange && _pathSamples != null && _pathSamples.Length >= 2)
             {
                 var gs = GameSettings.Instance;
                 float rng = gs != null ? gs.GunFireRange : 3f;
+                float ang = gs != null ? gs.GunFireAngle : 360f;
                 float front = gs != null ? gs.FrontStationDistance : 0f;
                 Vector3 ctr = PathPointAt(front);
                 Handles.color = new Color(1f, 0.85f, 0.2f, 0.9f);
-                Vector2 prev = Proj(ctr + new Vector3(rng, 0, 0));
-                for (int k = 1; k <= 26; k++)
+
+                // Hướng path tại điểm vào: look-ahead 0.05 y hệt RoundedPolylineFollower.
+                Vector3 fwd = PathPointAt(front + 0.05f) - ctr; fwd.y = 0f;
+                if (fwd.sqrMagnitude > 1e-6f) fwd.Normalize(); else fwd = Vector3.forward;
+
+                const int SEG = 26;
+                bool full = ang >= 360f;
+                Vector3 Dir(int k) => full
+                    ? new Vector3(Mathf.Cos(k / (float)SEG * Mathf.PI * 2f), 0f,
+                                  Mathf.Sin(k / (float)SEG * Mathf.PI * 2f))
+                    : Quaternion.AngleAxis(-ang * 0.5f + ang * k / SEG, Vector3.up) * fwd;
+
+                Vector2 prev = Proj(ctr + Dir(0) * rng);
+                for (int k = 1; k <= SEG; k++)
                 {
-                    float a = k / 26f * Mathf.PI * 2f;
-                    Vector2 s = Proj(ctr + new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)) * rng);
+                    Vector2 s = Proj(ctr + Dir(k) * rng);
                     Line(prev, s); prev = s;
                 }
-                Vector2 c = Proj(ctr); FillRect(new Rect(c.x - 3, c.y - 3, 6, 6), Color.yellow);
+                Vector2 c = Proj(ctr);
+                if (!full) // hai cạnh quạt về tâm — thiếu thì cung trông như đường trôi lơ lửng
+                {
+                    Line(c, Proj(ctr + Dir(0) * rng));
+                    Line(c, Proj(ctr + Dir(SEG) * rng));
+                }
+                FillRect(new Rect(c.x - 3, c.y - 3, 6, 6), Color.yellow);
             }
 
             if (_showPath) HandleWaypointDrag(Proj, area);
@@ -414,17 +565,15 @@ namespace Wayfu.Lamkn
                 var blockLbl = new GUIStyle(EditorStyles.miniBoldLabel) { alignment = TextAnchor.MiddleCenter };
                 blockLbl.normal.textColor = Color.white;
 
-                // Thu vùng click khi có MouseDown/MouseUp (tô màu dùng MouseDown; quét chọn chốt ở MouseUp).
-                bool collectHits = Event.current.type == EventType.MouseDown || Event.current.type == EventType.MouseUp;
-                List<(Rect rect, int flat)> cellHits = collectHits ? new List<(Rect, int)>() : null;
-                if (collectHits) _hitCells.Clear();
+                // Thu vùng click MỌI frame: brush tô màu chạy trên MouseDrag, không chỉ MouseDown/Up.
+                _hitCells.Clear();
+                _hitQueue.Clear();
 
                 for (int gi = 0; gi < _target.Grids.Count; gi++)
                 {
                     var grid = _target.Grids[gi];
                     if (grid == null) continue;
                     int last = Mathf.Max(0, grid.Rows - 1);
-                    cellHits?.Clear();
 
                     // Viền: Rect = 4 cạnh; Arc = 2 cạnh bên.
                     Handles.color = new Color(0.7f, 0.7f, 0.7f);
@@ -454,30 +603,50 @@ namespace Wayfu.Lamkn
                             float sz = PixSize(wp, Mathf.Max(0.05f, grid.CellScale.x));
                             var cellRect = new Rect(bp.x - sz / 2, bp.y - sz / 2, sz, sz);
                             int flatIdx = grid.CellIndex(r, e);
+                            bool isSpawner = cell.Type == BlockCellType.Spawner;
                             FillRect(cellRect, GlobalConfigManager.ColorOf(cell.Color));
-                            cellHits?.Add((cellRect, flatIdx));
-                            if (collectHits) _hitCells.Add((cellRect, gi, flatIdx));
+                            _hitCells.Add((cellRect, gi, flatIdx));
                             // Viền vàng = cell đang chọn; viền cam = cell Spawner (còn hàng đợi phía sau).
                             if (IsCellSelected(gi, flatIdx)) DrawOutline(cellRect, Color.yellow, area);
-                            else if (cell.Type == BlockCellType.Spawner) DrawOutline(cellRect, new Color(1f, 0.6f, 0.1f), area);
+                            else if (isSpawner) DrawOutline(cellRect, SpawnerCol, area);
                             // Số block trong stack (giống nhãn số đạn của gun).
                             if (sz >= 10f && area.Contains(bp))
                                 GUI.Label(new Rect(bp.x - sz / 2, bp.y - sz / 2, sz, sz), cell.BlockStackCt.ToString(), blockLbl);
 
                             // Hướng (rotate) của cell: mũi tên; kéo đầu mũi tên để xoay.
+                            // Spawner: mũi tên CAM + dài hơn = hướng nhả cell ra, phân biệt ngay với cell thường.
                             if (_showDir)
                             {
-                                Vector3 tipW = wp + cell.DirectionVector * 0.55f;
+                                Vector3 tipW = wp + cell.DirectionVector * (isSpawner ? 0.95f : 0.55f);
                                 if (Front(tipW))
                                 {
                                     Vector2 tip = Proj(tipW);
-                                    Handles.color = new Color(1f, 1f, 1f, 0.9f);
+                                    Handles.color = isSpawner ? SpawnerCol : new Color(1f, 1f, 1f, 0.9f);
                                     Line(bp, tip); ArrowHead(bp, tip);
                                     CellRotateHandle(gi, grid.CellIndex(r, e), wp, tip, area);
                                 }
                             }
                         }
                     }
+
+                    // Hàng đợi Spawner vẽ SAU toàn bộ cell thật: ghost xếp lùi về phía hàng sâu hơn, vẽ
+                    // xen trong vòng trên thì bị cell hàng sau đè lên — mà click lại ưu tiên ghost, thành
+                    // ra nhìn một đằng bấm một nẻo. Tắt Queue = không vẽ → _hitQueue rỗng → ghost cũng
+                    // hết ăn click, không còn cướp chuột của cell thật nằm dưới.
+                    if (_showQueue)
+                        for (int r = 0; r < grid.Rows; r++)
+                        {
+                            int count = grid.ElementsInRow(r);
+                            for (int e = 0; e < count; e++)
+                            {
+                                var cell = grid.GetCell(r, e);
+                                if (cell == null || cell.BlockStackCt <= 0 || cell.Type != BlockCellType.Spawner) continue;
+                                Vector3 wp = grid.CellPos(r, e);
+                                if (!Front(wp)) continue;
+                                DrawQueueGhosts(gi, grid, r, e, count, wp, grid.CellIndex(r, e), cell, area,
+                                                Proj, Front, PixSize);
+                            }
+                        }
 
                     // Handle: tâm + 2 đầu cạnh + xoay (kéo được).
                     GridHandle(gi, 0, Proj(grid.Center), area);
@@ -494,11 +663,13 @@ namespace Wayfu.Lamkn
                         GridHandle(gi, 3, Proj(rotW), area);
                     }
 
-                    // Click cell = tô màu Gen Color (sau handle xoay/resize để nhường ưu tiên).
-                    if (cellHits != null) PaintCellClick(gi, cellHits, area);
                 }
                 ApplyGridHandleDrag();
                 if (_showDir) ApplyCellRotateDrag();
+                // Tô màu chạy SAU toàn bộ handle (handle đã e.Use() thì tới đây không còn MouseDown nữa)
+                // và sau cả vòng vẽ, vì brush cần _hitCells/_hitQueue của MỌI grid đã gom đủ.
+                HandleQueuePaint(area);
+                HandleCellPaint(area);
             }
 
             // Slots.
@@ -705,6 +876,51 @@ namespace Wayfu.Lamkn
             else if (e.type == EventType.MouseUp) { _dragGrid = -1; _dragHandle = -1; e.Use(); }
         }
 
+        private static readonly Color SpawnerCol = new Color(1f, 0.6f, 0.1f, 1f);
+
+        /// <summary>
+        /// Vẽ hàng đợi cell PHÍA SAU của 1 cell Spawner. Hướng "phía sau" lấy từ chính grid
+        /// (CellPosAt(row+1) − CellPosAt(row)) nên đúng cả Arc lẫn Rect, và khớp chỗ runtime nhả cell ra
+        /// (xem GridBlockManager.FeedSources). Ghost nhỏ + mờ hơn cell thật, bước ngắn hơn 1 hàng để không
+        /// đè lên cell của hàng sâu hơn. Ô cuối là "+" (chỉ hiện khi đang chọn màu) để thêm nhanh.
+        /// </summary>
+        private void DrawQueueGhosts(int gi, BlockGridData grid, int r, int e, int count, Vector3 wp, int flatIdx,
+                                     BlockCellData cell, Rect area,
+                                     System.Func<Vector3, Vector2> Proj, System.Func<Vector3, bool> Front,
+                                     System.Func<Vector3, float, float> PixSize)
+        {
+            Vector3 back = grid.CellPosAt(r + 1, e, count) - wp; back.y = 0f;
+            if (back.sqrMagnitude < 1e-6f) return;
+            back.Normalize();
+
+            int qn = cell.Queue != null ? cell.Queue.Count : 0;
+            int slots = _paintColor != TypeColor.None ? qn + 1 : qn; // slot dư = ô "+"
+            if (slots == 0) return;
+
+            float step = Mathf.Max(0.3f, (grid.BlockWidth + grid.Spacing) * 0.75f);
+            for (int qi = 0; qi < slots; qi++)
+            {
+                Vector3 qw = wp + back * step * (qi + 1);
+                if (!Front(qw)) continue;
+                Vector2 qp = Proj(qw);
+                float qsz = Mathf.Max(4f, PixSize(qw, Mathf.Max(0.05f, grid.CellScale.x)) * 0.6f);
+                var qr = new Rect(qp.x - qsz * 0.5f, qp.y - qsz * 0.5f, qsz, qsz);
+
+                if (qi < qn)
+                {
+                    var q = cell.Queue[qi];
+                    var col = GlobalConfigManager.ColorOf(q != null ? q.Color : TypeColor.None);
+                    col.a = 0.5f; // mờ = block chưa nhả ra, phân biệt với cell thật
+                    var ir = RectIntersect(qr, area);
+                    if (ir.width > 0f && ir.height > 0f) EditorGUI.DrawRect(ir, col);
+                    DrawOutline(qr, SpawnerCol, area);
+                }
+                else DrawOutline(qr, new Color(1f, 0.6f, 0.1f, 0.5f), area); // ô "+" rỗng
+
+                _hitQueue.Add((qr, gi, flatIdx, qi));
+            }
+        }
+
         // Viền 1px quanh ô (đánh dấu cell đang chọn / cell Spawner).
         private static void DrawOutline(Rect r, Color col, Rect clip)
         {
@@ -731,22 +947,76 @@ namespace Wayfu.Lamkn
             }
         }
 
-        // Click trái vào ô cell khi Paint Color != None → tô cell đó. Paint = None thì không đụng vào,
-        // để HandleMarquee lo việc click-chọn / quét chọn.
-        private void PaintCellClick(int gi, List<(Rect rect, int flat)> hits, Rect area)
+        /// <summary>
+        /// Tô màu cell khi Paint Color != None: click 1 ô, hoặc GIỮ chuột rê qua nhiều ô (brush) — khỏi
+        /// phải chấm từng cell. Test cả ĐOẠN chuột đi được trong frame (ClipSegment) chứ không chỉ điểm
+        /// cuối, nên rê nhanh cũng không nhảy cóc bỏ sót ô. Paint = None thì nhường HandleMarquee chọn ô.
+        /// </summary>
+        private void HandleCellPaint(Rect area)
         {
-            if (_paintColor == TypeColor.None) return;
             var e = Event.current;
-            if (e.type != EventType.MouseDown || e.button != 0 || e.alt || !area.Contains(e.mousePosition)) return;
+            if (e.type == EventType.MouseUp) _painting = false;
+            if (_paintColor == TypeColor.None) return;
+
+            bool start = e.type == EventType.MouseDown && e.button == 0 && !e.alt && area.Contains(e.mousePosition);
+            bool cont = e.type == EventType.MouseDrag && _painting;
+            if (!start && !cont) return;
+
+            Vector2 from = start ? e.mousePosition : _lastPaintPos;
+            Vector2 to = e.mousePosition;
+            _lastPaintPos = to;
+            if (start) _painting = true;
+
             var grids = _so.FindProperty("Grids");
-            if (gi >= grids.arraySize) return;
-            var cells = grids.GetArrayElementAtIndex(gi).FindPropertyRelative("Cells");
-            for (int i = 0; i < hits.Count; i++)
+            bool hit = false;
+            foreach (var h in _hitCells)
             {
-                if (!hits[i].rect.Contains(e.mousePosition)) continue;
-                int flat = hits[i].flat;
-                if (flat < 0 || flat >= cells.arraySize) return;
-                cells.GetArrayElementAtIndex(flat).FindPropertyRelative("Color").enumValueIndex = (int)_paintColor;
+                Vector2 a = from, b = to;
+                if (!ClipSegment(ref a, ref b, h.rect)) continue;
+                if (h.grid < 0 || h.grid >= grids.arraySize) continue;
+                var cells = grids.GetArrayElementAtIndex(h.grid).FindPropertyRelative("Cells");
+                if (h.flat < 0 || h.flat >= cells.arraySize) continue;
+                cells.GetArrayElementAtIndex(h.flat).FindPropertyRelative("Color").enumValueIndex = (int)_paintColor;
+                hit = true;
+            }
+            if (hit || start) { e.Use(); Repaint(); }
+        }
+
+        /// <summary>
+        /// Ghost hàng đợi của cell Spawner: click trái = tô màu đang chọn, click vào ô "+" ở cuối đuôi =
+        /// thêm 1 cell vào hàng đợi, click PHẢI = xoá. Chạy TRƯỚC HandleCellPaint vì ghost nằm đè lên
+        /// vùng của hàng sâu hơn — không ưu tiên thì tô trúng cell thật bên dưới.
+        /// </summary>
+        private void HandleQueuePaint(Rect area)
+        {
+            var e = Event.current;
+            if (e.type != EventType.MouseDown || e.alt || !area.Contains(e.mousePosition)) return;
+            bool paint = e.button == 0 && _paintColor != TypeColor.None;
+            bool del = e.button == 1;
+            if (!paint && !del) return;
+
+            foreach (var h in _hitQueue)
+            {
+                if (!h.rect.Contains(e.mousePosition)) continue;
+                var grids = _so.FindProperty("Grids");
+                if (h.grid < 0 || h.grid >= grids.arraySize) return;
+                var cells = grids.GetArrayElementAtIndex(h.grid).FindPropertyRelative("Cells");
+                if (h.flat < 0 || h.flat >= cells.arraySize) return;
+                var q = cells.GetArrayElementAtIndex(h.flat).FindPropertyRelative("Queue");
+
+                if (del)
+                {
+                    if (h.qi < 0 || h.qi >= q.arraySize) return;
+                    q.DeleteArrayElementAtIndex(h.qi);
+                }
+                else if (h.qi >= q.arraySize) // ô "+" cuối đuôi → thêm cell mới
+                {
+                    var it = q.GetArrayElementAtIndex(AddArray(q));
+                    it.FindPropertyRelative("Color").enumValueIndex = (int)_paintColor;
+                    it.FindPropertyRelative("BlockStackCt").intValue = Mathf.Max(1, _target.HoleCapacity);
+                }
+                else q.GetArrayElementAtIndex(h.qi).FindPropertyRelative("Color").enumValueIndex = (int)_paintColor;
+
                 e.Use(); Repaint();
                 return;
             }
@@ -1316,8 +1586,12 @@ namespace Wayfu.Lamkn
                 return;
             }
             EditorGUILayout.HelpBox(_paintColor == TypeColor.None
-                ? "Paint = None: click cell/gun để XEM & SỬA thông số (không đổi màu)."
-                : $"Đang tô màu {_paintColor} — click cell trong khung giữa để đổi màu cell đó.",
+                ? "Paint = None: click cell/gun để XEM & SỬA thông số (không đổi màu) · kéo chuột = quét chọn nhiều cell."
+                : $"Đang tô màu {_paintColor} — click, hoặc GIỮ CHUỘT RÊ qua nhiều cell để tô cả vùng.\n"
+                  + (_showQueue
+                      ? "Cell Spawner: các ô mờ phía sau = hàng đợi · click ô mờ để tô · click ô \"+\" cuối đuôi "
+                        + "để thêm cell · CLICK PHẢI vào ô mờ để xoá. (Tắt nút Queue trên toolbar để ẩn.)"
+                      : "Hàng đợi Spawner đang ẩn (nút Queue trên toolbar đang tắt) — bật lại để sửa bằng chuột."),
                 MessageType.None);
         }
 
@@ -1475,7 +1749,14 @@ namespace Wayfu.Lamkn
                 case ListOp.MoveUp: list.MoveArrayElement(i, i - 1); break;
                 case ListOp.MoveDown: list.MoveArrayElement(i, i + 1); break;
                 case ListOp.Duplicate: list.InsertArrayElementAtIndex(i); break;
-                case ListOp.Delete: list.DeleteArrayElementAtIndex(i); break;
+                case ListOp.Delete:
+                    // Mảng OBJECT REFERENCE (vd LevelList.Levels): lần gọi đầu chỉ set phần tử = null,
+                    // phải gọi lần 2 mới rút nó ra. Mảng class [Serializable] thì 1 lần là đủ.
+                    var el = list.GetArrayElementAtIndex(i);
+                    if (el.propertyType == SerializedPropertyType.ObjectReference && el.objectReferenceValue != null)
+                        list.DeleteArrayElementAtIndex(i);
+                    list.DeleteArrayElementAtIndex(i);
+                    break;
             }
         }
 

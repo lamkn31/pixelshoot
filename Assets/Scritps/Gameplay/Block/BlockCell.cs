@@ -69,10 +69,16 @@ namespace Wayfu.Lamkn
             Fill(data.Color, Mathf.Max(1, data.BlockStackCt));
         }
 
-        /// <summary>Bật/tắt dấu hiệu "ô gốc Spawner" (ô cố định nhả cell ẩn ra).</summary>
-        public void ShowSpawnerIndicator(bool on)
+        /// <summary>
+        /// Bật/tắt dấu hiệu "ô gốc Spawner" (ô cố định nhả cell ẩn ra) và quay nó theo hướng nhả.
+        /// Rotation đặt ở WORLD, không theo cell: grid Rect giữ cell rotation = identity để block thẳng
+        /// trục, nên nếu để indicator ăn theo cell thì mũi tên mất hướng.
+        /// </summary>
+        public void ShowSpawnerIndicator(bool on, float dirAngle = 0f)
         {
-            if (spawnerIndicator != null) spawnerIndicator.SetActive(on);
+            if (spawnerIndicator == null) return;
+            spawnerIndicator.SetActive(on);
+            if (on) spawnerIndicator.transform.rotation = Quaternion.Euler(0f, dirAngle, 0f);
         }
 
         // Dựng stack block cùng màu, gắn vào BlocksContainer của prefab (fallback: chính cell).

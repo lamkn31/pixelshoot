@@ -249,7 +249,7 @@ namespace Wayfu.Lamkn
                 if (src.Row >= gr.Rows.Count) continue;
                 var row = gr.Rows[src.Row];
                 if (src.Col >= row.Length) continue;
-                if (row[src.Col] != null) row[src.Col].ShowSpawnerIndicator(true);
+                if (row[src.Col] != null) row[src.Col].ShowSpawnerIndicator(true, src.DirAngle);
             }
         }
 

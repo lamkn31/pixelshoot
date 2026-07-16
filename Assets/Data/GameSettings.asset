@@ -19,7 +19,7 @@ MonoBehaviour:
   FireInterval: 0.04
   GunFireRange: 8
   GunFireAngle: 90
-  FrontStationDistance: 3
+  FrontStationDistance: 0
   BulletSpeed: 100
   BlockStackSpacing: 1
   BlockCollapseDuration: 0.1
