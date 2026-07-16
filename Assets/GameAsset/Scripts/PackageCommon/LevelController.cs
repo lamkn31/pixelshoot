@@ -28,7 +28,38 @@ namespace Wayfu.Lamkn
         /// <summary>Index của level đang chơi trong Level List.</summary>
         public int CurrentIndex { get; private set; }
 
-        private void Start() => LoadCurrent();
+        private void Start()
+        {
+#if UNITY_EDITOR
+            var forced = ConsumeToolLevel();
+            if (forced != null)
+            {
+                Debug.Log($"[LevelController] Level Tool ghim level: {forced.name}");
+                PlayLevelNow(forced);
+                return;
+            }
+#endif
+            LoadCurrent();
+        }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// Level Tool bấm ▶: gửi level cần chơi qua SessionState rồi vào Play mode. Phải dùng
+        /// SessionState chứ không phải static — vào Play mode là domain reload, static bị xoá sạch.
+        /// </summary>
+        public const string PlayLevelKey = "Wayfu.LevelTool.PlayLevelGuid";
+
+        // Đọc XONG là xoá: lần bấm Play sau (Ctrl+P bình thường) phải quay về chơi theo tiến trình,
+        // không thì level bị ghim dính luôn.
+        private static LevelData ConsumeToolLevel()
+        {
+            string guid = UnityEditor.SessionState.GetString(PlayLevelKey, "");
+            if (string.IsNullOrEmpty(guid)) return null;
+            UnityEditor.SessionState.EraseString(PlayLevelKey);
+            string path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
+            return string.IsNullOrEmpty(path) ? null : UnityEditor.AssetDatabase.LoadAssetAtPath<LevelData>(path);
+        }
+#endif
 
         /// <summary>Nạp level theo tiến trình đã lưu (UserProgressSO.currentLevelIndex).</summary>
         public void LoadCurrent() => LoadLevel(ProgressIndex);
@@ -47,6 +78,20 @@ namespace Wayfu.Lamkn
                                "Level List (hoặc chưa có asset 'LevelList' trong Resources) và cũng chưa gán Level Override.");
                 return;
             }
+            Build();
+        }
+
+        /// <summary>
+        /// Chơi ĐÚNG level này ngay, BỎ QUA cả <see cref="levelOverride"/> lẫn tiến trình đã lưu
+        /// (Level Tool bấm ▶). Không đi qua Resolve(): ở đó override luôn thắng, nên bấm play level nào
+        /// cũng ra level override.
+        /// </summary>
+        public void PlayLevelNow(LevelData data)
+        {
+            if (data == null) return;
+            _level = data;
+            var l = levelList != null ? levelList : LevelList.Instance;
+            CurrentIndex = l != null ? Mathf.Max(0, l.IndexOf(data)) : 0;
             Build();
         }
 

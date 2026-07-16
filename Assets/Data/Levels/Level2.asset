@@ -17,12 +17,12 @@ MonoBehaviour:
   NumberOfColors: 0
   MechanicNames: []
   PathWaypoints:
-  - {x: 6.221357, y: 0, z: -29.238155}
-  - {x: -7.5622373, y: 0, z: -28.861368}
-  - {x: -8.12087, y: 0, z: -20.72801}
-  - {x: 6.9226303, y: 0, z: -22.120724}
-  - {x: 8.468599, y: 0, z: -12.269749}
-  - {x: -8.210695, y: 0, z: -12.915245}
+  - {x: 6.1394176, y: 0, z: -30.250956}
+  - {x: -6.668459, y: 0, z: -28.9254}
+  - {x: -6.5674615, y: 0, z: -21.720512}
+  - {x: 6.157745, y: 0, z: -23.732777}
+  - {x: 6.625215, y: 0, z: -14.381767}
+  - {x: -6.438647, y: 0, z: -13.899517}
   IsClosed: 0
   CornerRadius: 1
   PathWidth: 1.5
@@ -45,8 +45,8 @@ MonoBehaviour:
   HoleCapacity: 3
   Grids:
   - Shape: 1
-    Center: {x: -1.8116454, y: 0, z: -18.649515}
-    Rotation: 359.34396
+    Center: {x: -0.61839, y: 0, z: -20.997915}
+    Rotation: 0.8837391
     BaseRadius: 0.8478818
     Columns: 10
     RowSpacing: 1
@@ -421,7 +421,7 @@ MonoBehaviour:
       SpawnerDirectionAngleZ: 247.21085
     PendingRefill: []
   - Shape: 1
-    Center: {x: 3.3090851, y: 0, z: -10.737305}
+    Center: {x: 1.4527693, y: 0, z: -12.715378}
     Rotation: 4.064062
     BaseRadius: 0.8478818
     Columns: 10
@@ -797,8 +797,8 @@ MonoBehaviour:
       SpawnerDirectionAngleZ: 247.21085
     PendingRefill: []
   - Shape: 1
-    Center: {x: -1.9990972, y: 0, z: -27.77147}
-    Rotation: 4.064062
+    Center: {x: -1.2043486, y: 0, z: -28.483572}
+    Rotation: 8.2456255
     BaseRadius: 0.8478818
     Columns: 10
     RowSpacing: 1

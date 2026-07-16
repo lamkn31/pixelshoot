@@ -283,7 +283,9 @@ namespace Wayfu.Lamkn
                 EditorGUILayout.BeginHorizontal();
                 bool sel = lv == _target;
                 if (GUILayout.Toggle(sel, $"{i}. {lv.name}", "Button") && !sel) Select(lv);
-                if (GUILayout.Button("▶", BtnW)) { Select(lv); AddPreviewToScene(); }
+                // ▶ = chơi thẳng level này (trước đây chỉ Add Preview — trùng nút trên toolbar).
+                if (GUILayout.Button(new GUIContent("▶", "Chơi level này ngay (tự vào Play mode nếu đang tắt)."), BtnW))
+                { Select(lv); PlayLevel(lv); GUIUtility.ExitGUI(); }
                 if (GUILayout.Button("X", BtnW)) { DeleteLevel(lv); GUIUtility.ExitGUI(); }
                 EditorGUILayout.EndHorizontal();
             }
@@ -348,9 +350,11 @@ namespace Wayfu.Lamkn
             if (pend >= 0) ApplyOp(levels, pend, op);
             _listSO.ApplyModifiedProperties();
 
-            // Đang Play: nhảy thẳng tới level đang mở để xem ngay, không cần đợi thắng từng màn.
-            using (new EditorGUI.DisabledScope(!Application.isPlaying || _target == null))
-                if (GUILayout.Button("▶ Play level đang mở (runtime)")) PlayTargetNow(list);
+            // Nhảy thẳng tới level đang mở, không cần đợi thắng từng màn để tiến trình bò tới đó.
+            using (new EditorGUI.DisabledScope(_target == null))
+                if (GUILayout.Button(new GUIContent("▶ Play level đang mở",
+                    "Chơi đúng level này, bỏ qua tiến trình đã lưu. Đang tắt Play thì tự vào Play mode.")))
+                { PlayLevel(_target); GUIUtility.ExitGUI(); }
 
             EditorGUILayout.EndVertical();
         }
@@ -373,14 +377,30 @@ namespace Wayfu.Lamkn
             for (int i = 0; i < _levels.Count; i++) levels.GetArrayElementAtIndex(i).objectReferenceValue = _levels[i];
         }
 
-        // Level chưa nằm trong list thì ghim thẳng qua SetLevel — vẫn xem được mà không phải sửa list.
-        private void PlayTargetNow(LevelList list)
+        /// <summary>
+        /// Bấm ▶ = chơi ĐÚNG level này, bất kể tiến trình đang ở đâu.
+        /// Đang Play thì nạp thẳng vào LevelController. Chưa Play thì gửi level qua SessionState rồi vào
+        /// Play mode — LevelController.Start() sẽ nhặt lên (xem LevelController.PlayLevelKey).
+        /// </summary>
+        private void PlayLevel(LevelData lv)
         {
-            var lc = Object.FindObjectOfType<LevelController>();
-            if (lc == null) { Debug.LogWarning("[Level Tool] Scene không có LevelController."); return; }
-            int idx = list.IndexOf(_target);
-            if (idx >= 0) lc.LoadLevel(idx);
-            else { lc.SetLevel(_target); lc.Build(); }
+            if (lv == null) return;
+
+            if (Application.isPlaying)
+            {
+                var lc = Object.FindObjectOfType<LevelController>();
+                if (lc == null) { Debug.LogWarning("[Level Tool] Scene không có LevelController."); return; }
+                // PlayLevelNow chứ không phải LoadLevel(index): LoadLevel đi qua Resolve() nên Level
+                // Override (nếu scene có gán) sẽ thắng, bấm level nào cũng ra đúng cái override đó.
+                lc.PlayLevelNow(lv);
+                return;
+            }
+
+            string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(lv));
+            if (string.IsNullOrEmpty(guid)) { Debug.LogWarning("[Level Tool] Level chưa lưu thành asset."); return; }
+            AssetDatabase.SaveAssets(); // chơi đúng cái vừa sửa, không phải bản cũ còn trên đĩa
+            SessionState.SetString(LevelController.PlayLevelKey, guid);
+            EditorApplication.EnterPlaymode();
         }
 
         private void DrawGameSettings()

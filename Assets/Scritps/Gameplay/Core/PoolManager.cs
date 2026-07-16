@@ -16,6 +16,8 @@ namespace Wayfu.Lamkn
 
         public void Init(LevelData level)
         {
+            ReturnAllCells(); // PHẢI trước SetupPool — SetupPool nhả block pool
+
             SetupPool(_gunPool, level.GunPrefab, PrimitiveType.Sphere, 0.6f, "GunPool");
             SetupPool(_blockPool, level.BlockPrefab, PrimitiveType.Cube, 0.5f, "BlockPool");
             SetupPool(_bulletPool, level.BulletPrefab, PrimitiveType.Sphere, 0.25f, "BulletPool");
@@ -23,18 +25,34 @@ namespace Wayfu.Lamkn
             SetupPool(_cellPool, level.BlockCellPrefab, null, 1f, "CellPool");
         }
 
-        public Gun GetGun() => _gunPool.Get();
-        public BlockCell GetCell() => _cellPool.Get();
-        public Block GetBlock() => _blockPool.Get();
-        public Bullet GetBullet() => _bulletPool.Get();
+        /// <summary>
+        /// Nhả cell qua chính <see cref="BlockCell.Despawn"/> để cell TỰ dọn stack rồi mới về pool, và
+        /// phải chạy TRƯỚC khi block pool bị nhả hàng loạt.
+        /// <para>Pooler.ReturnAll() nhả thẳng qua pool, không đi qua Despawn() → cell giữ nguyên list
+        /// _blocks trỏ vào các block ĐÃ nằm sẵn trong pool. Lần tái dùng sau, BlockCell.Build() gọi
+        /// ReleaseBlocks() nhả lần 2 → InvalidOperationException "already been released to the pool",
+        /// và grid dựng dở dang. Chỉ lộ ra khi Build() level từ lần 2 trở đi (live sync / đổi level).</para>
+        /// </summary>
+        private void ReturnAllCells()
+        {
+            // Bản copy: Despawn() có sửa _externalPool của pool trong lúc duyệt.
+            foreach (var cell in _cellPool.GetNewExternalPoolList())
+                if (cell != null) cell.Despawn();
+        }
 
         public void ReturnAll()
         {
+            ReturnAllCells();
             _gunPool.ReturnAll();
             _cellPool.ReturnAll();
             _blockPool.ReturnAll();
             _bulletPool.ReturnAll();
         }
+
+        public Gun GetGun() => _gunPool.Get();
+        public BlockCell GetCell() => _cellPool.Get();
+        public Block GetBlock() => _blockPool.Get();
+        public Bullet GetBullet() => _bulletPool.Get();
 
         private void SetupPool<T>(Pooler<T> pool, T prefab, PrimitiveType? prim, float scale, string parentName)
             where T : MonoBehaviour
