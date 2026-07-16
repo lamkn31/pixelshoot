@@ -35,6 +35,7 @@ namespace Wayfu.Lamkn
         private GunState _state = GunState.InSlot;
         private float _fireInterval = 0.25f;
         private float _fireRange = 3f;
+        private float _fireAngle = 360f; // góc quạt phát hiện; 360 = quét tròn
         private float _bulletSpeed = 14f;
         private float _fireTimer;
         private BlockCell _currentTarget;
@@ -84,11 +85,12 @@ namespace Wayfu.Lamkn
             return null;
         }
 
-        public void Init(GunData data, float fireInterval, float fireRange, float bulletSpeed)
+        public void Init(GunData data, float fireInterval, float fireRange, float fireAngle, float bulletSpeed)
         {
             Data = new GunData { Color = data.Color, CountBullet = data.CountBullet };
             _fireInterval = fireInterval;
             _fireRange = fireRange;
+            _fireAngle = fireAngle;
             _bulletSpeed = bulletSpeed;
 
             // Reset trạng thái (item pooled có thể tái dùng).
@@ -159,7 +161,8 @@ namespace Wayfu.Lamkn
             // sâu) → check Generation, lệch = target cũ đã chết, không bám theo object ra ô mới.
             if (!HasLiveTarget)
             {
-                _currentTarget = GridBlockManager.Instance?.FindTargetCell(Data.Color, transform.position, _fireRange);
+                _currentTarget = GridBlockManager.Instance?.FindTargetCell(
+                    Data.Color, transform.position, transform.forward, _fireRange, _fireAngle);
                 _targetGen = _currentTarget != null ? _currentTarget.Generation : 0;
             }
 
@@ -282,14 +285,21 @@ namespace Wayfu.Lamkn
         }
 
 #if UNITY_EDITOR
-        // Vòng vàng = tầm PHÁT HIỆN (chỉ dùng để bắt cell hàng 0 sát path). Đường tới target: xanh = target
-        // còn trong vòng phát hiện, đỏ = đã ra ngoài — vẫn bắn bình thường (không gate theo range).
+        // Quạt vàng = tầm PHÁT HIỆN (bán kính _fireRange, mở _fireAngle độ quanh hướng thân gun). Chỉ dùng
+        // để bắt cell hàng 0 sát path. Đường tới target: xanh = còn trong quạt, đỏ = đã ra ngoài — vẫn bắn
+        // bình thường (không gate theo range sau khi đã chốt target).
         private void OnDrawGizmos()
         {
             if (_state == GunState.Dead) return;
 
             Handles.color = new Color(1f, 0.85f, 0.2f, 0.9f);
-            Handles.DrawWireDisc(transform.position, Vector3.up, _fireRange); // vòng phát hiện trên sàn XZ
+            if (_fireAngle >= 360f)
+                Handles.DrawWireDisc(transform.position, Vector3.up, _fireRange);
+            else
+            {
+                Vector3 from = Quaternion.AngleAxis(-_fireAngle * 0.5f, Vector3.up) * transform.forward;
+                Handles.DrawSolidArc(transform.position, Vector3.up, from, _fireAngle, _fireRange);
+            }
 
             if (_state == GunState.OnPath && _currentTarget != null)
             {

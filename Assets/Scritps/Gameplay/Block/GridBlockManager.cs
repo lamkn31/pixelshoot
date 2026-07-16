@@ -141,12 +141,24 @@ namespace Wayfu.Lamkn
         /// nên gun ăn hàng 0 → xuống sâu dần trong cùng cột. Cùng độ sâu thì lấy cell GẦN NHẤT: vì cột trải
         /// dọc path nên gần nhất cũng chính là tuần tự theo index, không nhảy cóc.</para>
         /// </summary>
-        public BlockCell FindTargetCell(TypeColor color, Vector3 from, float detectRange)
+        /// <summary>
+        /// Cell cùng màu gần nhất ở hàng ngoài cùng còn bắn được, TRONG tầm phát hiện (bán kính detectRange)
+        /// VÀ trong góc quạt (fireAngle độ, đối xứng quanh forward). fireAngle >= 360 = quét tròn.
+        /// </summary>
+        public BlockCell FindTargetCell(TypeColor color, Vector3 from, Vector3 forward, float detectRange, float fireAngle)
         {
             BlockCell best = null;
             int bestRow = -1;
             float bestSqr = float.MaxValue;
             float detectSqr = detectRange * detectRange;
+
+            // Quạt tính trên sàn XZ. >=360 thì bỏ qua hẳn phép so góc (quét tròn); ngược lại chuẩn hoá
+            // forward 1 lần ở ngoài vòng lặp để so cosin, khỏi gọi Vector3.Angle (Acos) cho từng cell.
+            bool coneLimited = fireAngle < 360f;
+            forward.y = 0f;
+            if (coneLimited && forward.sqrMagnitude > 1e-6f) forward.Normalize(); else coneLimited = false;
+            float cosHalf = Mathf.Cos(fireAngle * 0.5f * Mathf.Deg2Rad);
+
             foreach (var gr in _grids)
                 for (int r = 0; r < gr.Rows.Count; r++)
                 {
@@ -160,6 +172,10 @@ namespace Wayfu.Lamkn
                         Vector3 d = cell.transform.position - from; d.y = 0f;
                         float sqr = d.sqrMagnitude;
                         if (sqr > detectSqr) continue;
+                        // dot(forward, d̂) >= cos(nửa góc) ⇔ cell nằm trong quạt. sqr>eps để cell trùng
+                        // vị trí gun không chia cho 0 (luôn coi là trong quạt).
+                        if (coneLimited && sqr > 1e-6f
+                            && Vector3.Dot(forward, d) < cosHalf * Mathf.Sqrt(sqr)) continue;
                         if (r > bestRow || (r == bestRow && sqr < bestSqr))
                         { bestRow = r; bestSqr = sqr; best = cell; }
                     }

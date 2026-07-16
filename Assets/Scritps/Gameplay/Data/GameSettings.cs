@@ -22,6 +22,9 @@ namespace Wayfu.Lamkn
         [Tooltip("Tầm PHÁT HIỆN (không phải điều kiện bắn): gun bắt cell cùng màu ở hàng ngoài cùng sát path " +
                  "trong bán kính này. Đã bắt được cột thì bắn dứt cả cột, kể cả khi gun đã chạy ra xa.")]
         public float GunFireRange = 3f;
+        [Tooltip("Góc quạt PHÁT HIỆN (độ), tính đối xứng quanh hướng thân gun (hướng path). 360 = quét " +
+                 "tròn không giới hạn; ví dụ 120 = chỉ bắt cell trong ±60° phía trước.")]
+        [Range(1f, 360f)] public float GunFireAngle = 360f;
         [Tooltip("Arc-length của station trước nhất trên path.")]
         public float FrontStationDistance = 0f;
         [Tooltip("Tốc độ bay của bullet.")]

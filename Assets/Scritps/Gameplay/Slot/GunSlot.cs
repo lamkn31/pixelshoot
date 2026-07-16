@@ -27,7 +27,8 @@ namespace Wayfu.Lamkn
         public void SetPosition(Vector3 pos) => transform.position = pos;
 
         /// <summary>Nạp gun cho slot (lấy từ pool); spacing dùng chung truyền vào.</summary>
-        public void Fill(List<GunData> guns, float spacing, float fireInterval, float fireRange, float bulletSpeed)
+        public void Fill(List<GunData> guns, float spacing, float fireInterval, float fireRange, float fireAngle,
+                         float bulletSpeed)
         {
             _spacing = spacing;
             Clear();
@@ -38,7 +39,7 @@ namespace Wayfu.Lamkn
                 var g = PoolManager.Instance.GetGun();
                 g.transform.SetParent(transform);
                 g.transform.position = SlotPos(i);
-                g.Init(guns[i], fireInterval, fireRange, bulletSpeed);
+                g.Init(guns[i], fireInterval, fireRange, fireAngle, bulletSpeed);
                 g.SetSlot(this);
                 _guns.Add(g);
             }

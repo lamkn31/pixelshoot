@@ -24,6 +24,7 @@ namespace Wayfu.Lamkn
             float spacing = gs != null ? gs.SlotGunSpacing : 1f;   // config chung
             float fireInterval = gs != null ? gs.FireInterval : 0.25f;
             float fireRange = gs != null ? gs.GunFireRange : 3f;
+            float fireAngle = gs != null ? gs.GunFireAngle : 360f;
             float bulletSpeed = gs != null ? gs.BulletSpeed : 14f;
 
             var slots = ResolveSceneSlots();
@@ -37,7 +38,7 @@ namespace Wayfu.Lamkn
                     slots[i].gameObject.SetActive(active);
                     if (active)
                     {
-                        slots[i].Fill(level.Slots[i].Guns, spacing, fireInterval, fireRange, bulletSpeed);
+                        slots[i].Fill(level.Slots[i].Guns, spacing, fireInterval, fireRange, fireAngle, bulletSpeed);
                         _activeSlots.Add(slots[i]);
                     }
                 }
@@ -55,7 +56,7 @@ namespace Wayfu.Lamkn
                     var slot = go.AddComponent<GunSlot>();
                     slot.SlotIndex = i;
                     slot.SetPosition(new Vector3(i * gap, 0f, 0f));
-                    slot.Fill(sd.Guns, spacing, fireInterval, fireRange, bulletSpeed);
+                    slot.Fill(sd.Guns, spacing, fireInterval, fireRange, fireAngle, bulletSpeed);
                     _activeSlots.Add(slot);
                     _fallbackCreated.Add(go);
                 }

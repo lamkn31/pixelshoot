@@ -64,7 +64,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   canon: {fileID: 5027395586423268895}
   muzzle: {fileID: 3861695898367228732}
-  canonTurnSpeed: 540
+  canonTurnSpeed: 720
 --- !u!1 &4065937337305141625
 GameObject:
   m_ObjectHideFlags: 0
