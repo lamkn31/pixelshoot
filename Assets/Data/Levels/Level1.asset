@@ -18,7 +18,7 @@ MonoBehaviour:
   MechanicNames: []
   PathWaypoints:
   - {x: 0.122956745, y: 0, z: -29.597141}
-  - {x: -0.19461444, y: 0, z: -7.6448326}
+  - {x: -0.023787625, y: 0, z: -8.990963}
   IsClosed: 0
   CornerRadius: 3
   PathWidth: 2.8

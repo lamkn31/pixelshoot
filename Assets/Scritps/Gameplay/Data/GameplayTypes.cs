@@ -96,6 +96,20 @@ namespace Wayfu.Lamkn
         /// <summary>Hướng "sâu dần" của grid trên sàn (local +Z sau khi xoay). Hàng 0 gần path nhất.</summary>
         public Vector3 Forward => Quaternion.Euler(0f, Rotation, 0f) * Vector3.forward;
 
+        /// <summary>
+        /// Hướng dồn/nhả MẶC ĐỊNH của cell (độ quanh Y) — tiến về phía path, tức chiều cell trượt khi
+        /// dồn hàng và chiều spawner đẩy cell ra. Nguồn DUY NHẤT cho mọi nơi tính hướng cell.
+        /// <para><b>Rect</b>: lưới thẳng nên MỌI cell chung 1 hướng = ngược <see cref="Forward"/>
+        /// (hàng sâu tiến ra hàng 0). Không phụ thuộc row/e.</para>
+        /// <para><b>Arc</b>: theo từng cell — hướng từ cell về tâm grid (cung mở ra nên mỗi cell 1 góc).</para>
+        /// </summary>
+        public float DefaultCellAngle(int row, int e)
+        {
+            Vector3 v = Shape == BlockGridShape.Rect ? -Forward : Center - CellPos(row, e);
+            v.y = 0f;
+            return v.sqrMagnitude > 1e-6f ? Mathf.Repeat(Mathf.Atan2(v.x, v.z) * Mathf.Rad2Deg, 360f) : 0f;
+        }
+
         /// <summary>Offset local (chưa xoay) → toạ độ world: xoay quanh Y rồi dời về Center.</summary>
         private Vector3 ToWorld(Vector3 local) => Center + Quaternion.Euler(0f, Rotation, 0f) * local;
 

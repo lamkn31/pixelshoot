@@ -40,6 +40,7 @@ namespace Wayfu.Lamkn
 
         private readonly List<Block> _blocks = new List<Block>();
         private GridBlockManager _manager;
+        private Quaternion _indicatorRestLocalRot = Quaternion.identity; // pose gốc của mũi tên trong prefab
         private Coroutine _moveRoutine;
         private int _pendingHits;
         private float _stackSpacing;
@@ -47,6 +48,13 @@ namespace Wayfu.Lamkn
         private Pooler<BlockCell> _pool;
 
         public void OnInitializedInPool(Pooler<BlockCell> pool) => _pool = pool;
+
+        private void Awake()
+        {
+            // Nhớ pose gốc TRƯỚC khi ShowSpawnerIndicator kịp ghi đè — sau đó localRotation không còn là
+            // giá trị dựng trong prefab nữa.
+            if (spawnerIndicator != null) _indicatorRestLocalRot = spawnerIndicator.transform.localRotation;
+        }
 
         public int StackCount => _blocks.Count;
         /// <summary>Số block chưa bị đạn "đặt chỗ" (đạn đang bay) — gun chỉ bắn khi còn &gt; 0.</summary>
@@ -71,14 +79,20 @@ namespace Wayfu.Lamkn
 
         /// <summary>
         /// Bật/tắt dấu hiệu "ô gốc Spawner" (ô cố định nhả cell ẩn ra) và quay nó theo hướng nhả.
-        /// Rotation đặt ở WORLD, không theo cell: grid Rect giữ cell rotation = identity để block thẳng
-        /// trục, nên nếu để indicator ăn theo cell thì mũi tên mất hướng.
+        /// <para>Chỉ xoay quanh trục Y (world), CHỒNG lên pose gốc dựng trong prefab. Gán thẳng
+        /// rotation = Euler(0,dirAngle,0) sẽ xoá luôn góc nghiêng đã dựng sẵn (mũi tên nằm phẳng trên
+        /// sàn nhờ X=90) → mũi tên dựng đứng, camera top-down nhìn gần như không thấy.</para>
+        /// <para>Đặt ở WORLD chứ không ăn theo cell: cell đứng ở ô gốc có thể là cell dồn từ hàng sau
+        /// lên, mang góc riêng của nó — mũi tên phải theo hướng của NGUỒN, không phải của cell.</para>
         /// </summary>
         public void ShowSpawnerIndicator(bool on, float dirAngle = 0f)
         {
+            Debug.Log(dirAngle);
             if (spawnerIndicator == null) return;
             spawnerIndicator.SetActive(on);
-            if (on) spawnerIndicator.transform.rotation = Quaternion.Euler(0f, dirAngle, 0f);
+            if (on)
+                spawnerIndicator.transform.rotation =
+                    Quaternion.AngleAxis(dirAngle, Vector3.up) * _indicatorRestLocalRot;
         }
 
         // Dựng stack block cùng màu, gắn vào BlocksContainer của prefab (fallback: chính cell).

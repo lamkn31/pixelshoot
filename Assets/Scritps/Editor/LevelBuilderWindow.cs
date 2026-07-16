@@ -538,8 +538,8 @@ namespace Wayfu.Lamkn
                 }
             }
 
-            // Quạt PHÁT HIỆN của gun tại ĐIỂM VÀO path — mọi gun đều xuất phát từ đây rồi chạy dọc path
-            // (không phải điều kiện bắn; xem GridBlockManager.FindTargetCell). Quạt mở GunFireAngle độ
+            // Quạt PHÁT HIỆN của gun tại ĐIỂM VÀO path — mọi gun đều xuất phát từ đây rồi chạy dọc path.
+            // Gun chỉ bắt VÀ chỉ bắn cell nằm trong quạt này. Quạt mở GunFireAngle độ
             // quanh HƯỚNG PATH tại điểm vào — đúng như runtime, vì thân gun luôn quay theo đường ray.
             // GunFireAngle = 360 thì vẽ vòng tròn như cũ.
             if (_showRange && _pathSamples != null && _pathSamples.Length >= 2)
@@ -635,15 +635,22 @@ namespace Wayfu.Lamkn
 
                             // Hướng (rotate) của cell: mũi tên; kéo đầu mũi tên để xoay.
                             // Spawner: mũi tên CAM + dài hơn = hướng nhả cell ra, phân biệt ngay với cell thường.
+                            // Rect: mọi cell chung 1 hướng của grid → không cho kéo xoay từng cell, và vẽ
+                            // theo hướng TÍNH TỪ GRID (không đọc data) để xoay grid là mũi tên theo ngay,
+                            // khỏi phải bấm Generate Cells lại.
                             if (_showDir)
                             {
-                                Vector3 tipW = wp + cell.DirectionVector * (isSpawner ? 0.95f : 0.55f);
+                                bool isRectGrid = grid.Shape == BlockGridShape.Rect;
+                                Vector3 dirV = isRectGrid
+                                    ? Quaternion.Euler(0f, grid.DefaultCellAngle(r, e), 0f) * Vector3.forward
+                                    : cell.DirectionVector;
+                                Vector3 tipW = wp + dirV * (isSpawner ? 0.95f : 0.55f);
                                 if (Front(tipW))
                                 {
                                     Vector2 tip = Proj(tipW);
                                     Handles.color = isSpawner ? SpawnerCol : new Color(1f, 1f, 1f, 0.9f);
                                     Line(bp, tip); ArrowHead(bp, tip);
-                                    CellRotateHandle(gi, grid.CellIndex(r, e), wp, tip, area);
+                                    if (!isRectGrid) CellRotateHandle(gi, grid.CellIndex(r, e), wp, tip, area);
                                 }
                             }
                         }
@@ -1653,10 +1660,8 @@ namespace Wayfu.Lamkn
                     c.FindPropertyRelative("CellScale").vector3Value = Vector3.one;
                     c.FindPropertyRelative("BlockCol").intValue = el;   // index cột trong hàng
                     c.FindPropertyRelative("SpawnerDepth").intValue = r; // 0 = hàng sát path
-                    // Hướng mặc định: dồn về TÂM grid (≈ về phía path).
-                    Vector3 v = grid.Center - grid.CellPos(r, el); v.y = 0f;
-                    c.FindPropertyRelative("SpawnerDirectionAngleZ").floatValue =
-                        v.sqrMagnitude > 1e-6f ? Mathf.Repeat(Mathf.Atan2(v.x, v.z) * Mathf.Rad2Deg, 360f) : 0f;
+                    // Hướng dồn: Rect = mọi cell chung 1 hướng của grid; Arc = từng cell về tâm.
+                    c.FindPropertyRelative("SpawnerDirectionAngleZ").floatValue = grid.DefaultCellAngle(r, el);
                 }
             }
         }

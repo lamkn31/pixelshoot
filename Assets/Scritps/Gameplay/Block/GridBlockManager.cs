@@ -31,6 +31,7 @@ namespace Wayfu.Lamkn
             public Transform Root;                 // node cha để gắn cell (kể cả cell refill)
             public Queue<PendingBlockData> Pending; // hàng đợi refill mức GRID (lấp hàng sâu nhất)
             public float StackSpacing;
+            public bool HasIndicators;             // còn mũi tên spawner nào cần dọn/gắn không
         }
 
         private readonly List<GridRuntime> _grids = new List<GridRuntime>();
@@ -82,6 +83,7 @@ namespace Wayfu.Lamkn
                     }
                     gr.Rows.Add(row);
                 }
+                gr.HasIndicators = gr.Sources.Count > 0; // mồi cờ trước, Refresh tự cập nhật lại sau
                 RefreshSpawnerIndicators(gr);
                 _grids.Add(gr);
             }
@@ -105,15 +107,22 @@ namespace Wayfu.Lamkn
             cell.name = cellName;
             cell.transform.SetParent(gr.Root);
             cell.transform.position = pos;
-            // Rect: lưới thẳng → mọi block rotation = 0. Arc: xoay theo hướng dồn của cell cho hợp cung.
-            cell.transform.rotation = gr.Data.Shape == BlockGridShape.Rect
-                ? Quaternion.identity
-                : Quaternion.Euler(0f, data.SpawnerDirectionAngleZ, 0f);
+            cell.transform.rotation = Quaternion.Euler(0f, CellAngle(gr, data), 0f);
             // Cell chỉ là node chứa → giữ scale 1; CellScale của grid áp thẳng lên BLOCK bên trong.
             cell.transform.localScale = Vector3.one;
             cell.Build(data, gr.StackSpacing, gr.Data.CellScale, this);
             return cell;
         }
+
+        /// <summary>
+        /// Hướng dồn/nhả của cell. Rect: tính thẳng từ grid (mọi cell chung 1 hướng) nên xoay grid là
+        /// khớp ngay, data cũ chưa Generate lại cũng không lệch. Arc: lấy góc riêng đã lưu trong data —
+        /// mỗi cell 1 góc, và người dùng kéo mũi tên chỉnh tay được.
+        /// </summary>
+        private static float CellAngle(GridRuntime gr, BlockCellData data) =>
+            gr.Data.Shape == BlockGridShape.Rect
+                ? gr.Data.DefaultCellAngle(0, 0)   // Rect: không phụ thuộc row/e
+                : data.SpawnerDirectionAngleZ;
 
         public void Clear()
         {
@@ -140,6 +149,8 @@ namespace Wayfu.Lamkn
         /// <para>Thứ tự ưu tiên: cell SÂU hơn (row lớn) trước — cell sâu chỉ hở khi cell chặn nó đã sạch,
         /// nên gun ăn hàng 0 → xuống sâu dần trong cùng cột. Cùng độ sâu thì lấy cell GẦN NHẤT: vì cột trải
         /// dọc path nên gần nhất cũng chính là tuần tự theo index, không nhảy cóc.</para>
+        /// <para>Bộ lọc range+góc ở đây phải khớp Gun.InDetectZone: Gun gọi lại mỗi frame để buông target
+        /// khi quạt đã trôi qua, hai bên lệch nhau thì target vừa chọn xong đã bị loại ngay frame sau.</para>
         /// </summary>
         /// <summary>
         /// Cell cùng màu gần nhất ở hàng ngoài cùng còn bắn được, TRONG tầm phát hiện (bán kính detectRange)
@@ -239,18 +250,33 @@ namespace Wayfu.Lamkn
         // phải gắn lại dấu hiệu cho đúng cell đang đứng ở ô đó.
         private static void RefreshSpawnerIndicators(GridRuntime gr)
         {
-            if (gr.Sources.Count == 0) return;
+            // Cờ thay cho "Sources.Count == 0 thì return": thoát sớm theo Sources là SAI — lúc nguồn cuối
+            // bị gỡ chính là lúc phải dọn mũi tên còn sót, thoát ra thì nó bật vĩnh viễn. Cờ chỉ để grid
+            // không (còn) spawner nào khỏi quét lại toàn bộ cell mỗi lần dồn hàng.
+            if (!gr.HasIndicators) return;
+
             foreach (var row in gr.Rows)
                 foreach (var c in row)
                     if (c != null) c.ShowSpawnerIndicator(false);
 
+            bool any = false;
             foreach (var src in gr.Sources)
             {
+                // Hàng đợi đã CẠN → cell đang đứng ở ô gốc là cell CUỐI, sau nó không còn gì nhả ra nữa
+                // → thôi vẽ mũi tên spawner cho nó.
+                if (src.Queue.Count == 0) continue;
                 if (src.Row >= gr.Rows.Count) continue;
                 var row = gr.Rows[src.Row];
-                if (src.Col >= row.Length) continue;
-                if (row[src.Col] != null) row[src.Col].ShowSpawnerIndicator(true, src.DirAngle);
+                if (src.Col >= row.Length || row[src.Col] == null) continue;
+
+                float ang = gr.Data.Shape == BlockGridShape.Rect
+                    ? gr.Data.DefaultCellAngle(0, 0) : src.DirAngle;
+                row[src.Col].ShowSpawnerIndicator(true, ang);
+                any = true;
             }
+
+            // Hàng đợi chỉ vơi đi chứ không đầy lại → hết mũi tên là hết hẳn, lần sau khỏi quét.
+            gr.HasIndicators = any;
         }
 
         // Dồn 1 bước: cell ở hàng r tiến lên ô CHẶN nó ở hàng r-1 nếu ô đó trống — dùng đúng map góc của
@@ -342,7 +368,6 @@ namespace Wayfu.Lamkn
                 Vector3 pos = gr.Data.CellPosAt(rowIndex, e, count);
                 // Xuất phát từ ĐÚNG vị trí hàng sâu hơn 1 bậc rồi trượt vào — hợp cả Arc lẫn Rect.
                 Vector3 spawnPos = gr.Data.CellPosAt(rowIndex + 1, e, count);
-                Vector3 feed = pos - spawnPos; feed.y = 0f; // hướng dồn = tiến về phía path
 
                 var data = new BlockCellData
                 {
@@ -350,8 +375,7 @@ namespace Wayfu.Lamkn
                     BlockStackCt = p.BlockStackCt,
                     BlockCol = e,
                     SpawnerDepth = rowIndex,
-                    SpawnerDirectionAngleZ = feed.sqrMagnitude > 1e-6f
-                        ? Mathf.Repeat(Mathf.Atan2(feed.x, feed.z) * Mathf.Rad2Deg, 360f) : 0f,
+                    SpawnerDirectionAngleZ = gr.Data.DefaultCellAngle(rowIndex, e),
                 };
 
                 row[e] = CreateCell(gr, $"Cell_refill_r{rowIndex}_e{e}", spawnPos, data);
