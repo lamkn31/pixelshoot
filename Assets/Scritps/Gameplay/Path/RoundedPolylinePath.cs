@@ -8,6 +8,8 @@ public class RoundedPolylinePath : MonoBehaviour
     [Header("Path Settings")]
     public List<Transform> waypoints = new List<Transform>();
     public bool isClosed = true;
+    [Tooltip("RoundedCorner = nối thẳng + bo góc. Bezier = cong mượt toàn phần (cornerRadius bỏ qua).")]
+    public PathStyle style = PathStyle.RoundedCorner;
     public float cornerRadius = 1.0f;
 
     [Header("Resolution Settings")]
@@ -35,7 +37,7 @@ public class RoundedPolylinePath : MonoBehaviour
             wp[i] = waypoints[i].position;
         }
 
-        samples = BuildSamples(wp, isClosed, cornerRadius, curveSamples);
+        samples = BuildSamples(wp, isClosed, cornerRadius, curveSamples, style);
         if (samples == null) return;
 
         sampleArc = new float[samples.Length];
@@ -53,10 +55,12 @@ public class RoundedPolylinePath : MonoBehaviour
     /// đường cong như runtime — một nguồn duy nhất, không vẽ xấp xỉ bằng đoạn thẳng nối waypoint.
     /// </summary>
     public static Vector3[] BuildSamples(IList<Vector3> wpPositions, bool isClosed, float cornerRadius,
-                                         int curveSamples = 8)
+                                         int curveSamples = 8, PathStyle style = PathStyle.RoundedCorner)
     {
         int n = wpPositions != null ? wpPositions.Count : 0;
         if (n < 2) return null;
+
+        if (style == PathStyle.Bezier) return BuildBezierSamples(wpPositions, isClosed, curveSamples);
 
         var pts = new List<Vector3>(n * (curveSamples + 2));
 
@@ -128,6 +132,47 @@ public class RoundedPolylinePath : MonoBehaviour
 
         if (isClosed) pts.Add(pts[0]); else pts.Add(wpPositions[n - 1]);
         return pts.ToArray();
+    }
+
+    /// <summary>
+    /// Đường cong MƯỢT toàn phần đi qua đúng mọi waypoint: mỗi đoạn wp[i]→wp[i+1] là 1 Bezier bậc 3,
+    /// 2 control point suy từ waypoint KỀ theo Catmull-Rom (tiếp tuyến tại wp[i] ∥ wp[i+1]−wp[i−1]).
+    /// Nhờ 2 đoạn liền kề dùng chung tiếp tuyến tại điểm nối nên đường liền mạch, không gãy góc.
+    /// <para>Khác RoundedCorner: không có đoạn thẳng nào, và cornerRadius vô nghĩa ở đây.</para>
+    /// </summary>
+    private static Vector3[] BuildBezierSamples(IList<Vector3> wp, bool isClosed, int curveSamples)
+    {
+        int n = wp.Count;
+        int segs = isClosed ? n : n - 1;          // kín thì có thêm đoạn cuối→đầu
+        int steps = Mathf.Max(2, curveSamples + 1);
+        var pts = new List<Vector3>(segs * steps + 1);
+
+        for (int i = 0; i < segs; i++)
+        {
+            Vector3 p0 = wp[WrapIndex(i - 1, n, isClosed)];
+            Vector3 p1 = wp[WrapIndex(i, n, isClosed)];
+            Vector3 p2 = wp[WrapIndex(i + 1, n, isClosed)];
+            Vector3 p3 = wp[WrapIndex(i + 2, n, isClosed)];
+
+            // Catmull-Rom → control point Bezier. Hệ số 1/6 là hệ số chuẩn để 2 dạng khớp nhau.
+            Vector3 c1 = p1 + (p2 - p0) / 6f;
+            Vector3 c2 = p2 - (p3 - p1) / 6f;
+
+            // Bỏ t=1 (trùng đầu đoạn sau) → không sinh điểm trùng làm sampleArc có đoạn dài 0.
+            for (int k = 0; k < steps; k++) pts.Add(CubicBezier(p1, c1, c2, p2, k / (float)steps));
+        }
+        pts.Add(wp[isClosed ? 0 : n - 1]); // chốt điểm cuối (kín thì khép về waypoint đầu)
+        return pts.ToArray();
+    }
+
+    // Path hở: kẹp ở 2 biên → waypoint đầu/cuối tự làm điểm ảo, tiếp tuyến 2 đầu thành thẳng.
+    private static int WrapIndex(int i, int n, bool isClosed) =>
+        isClosed ? ((i % n) + n) % n : Mathf.Clamp(i, 0, n - 1);
+
+    private static Vector3 CubicBezier(Vector3 a, Vector3 b, Vector3 c, Vector3 d, float t)
+    {
+        float u = 1f - t;
+        return u * u * u * a + 3f * u * u * t * b + 3f * u * t * t * c + t * t * t * d;
     }
 
     // Hàm lấy vị trí dựa trên khoảng cách tuyệt đối (distance) chạy trên đường thay vì dùng biến t (0->1) chung chung

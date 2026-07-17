@@ -11,6 +11,15 @@ namespace Wayfu.Lamkn
     public enum BlockObstacleType { None, Crate, Lock, Ice, Mystery, Barricade }
 
     /// <summary>
+    /// Cách dựng đường cong của path từ danh sách waypoint.
+    /// <para><b>RoundedCorner</b>: nối thẳng waypoint, chỉ BO tròn tại góc theo CornerRadius → đa số là
+    /// đoạn thẳng.</para>
+    /// <para><b>Bezier</b>: Bezier bậc 3 từng đoạn, control point suy từ 2 waypoint kề (Catmull-Rom) →
+    /// đường cong MƯỢT toàn phần, vẫn ĐI QUA đúng mọi waypoint. CornerRadius không dùng.</para>
+    /// </summary>
+    public enum PathStyle { RoundedCorner, Bezier }
+
+    /// <summary>
     /// Kiểu cell.
     /// <para><b>Normal</b>: phá hết stack là cell biến mất.</para>
     /// <para><b>Spawner</b>: có hàng đợi cell PHÍA SAU. Phá hết stack hiện tại → đẩy cell kế trong hàng đợi

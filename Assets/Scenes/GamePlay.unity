@@ -834,6 +834,16 @@ PrefabInstance:
       propertyPath: m_LocalPosition.z
       value: -17.3
       objectReference: {fileID: 0}
+    - target: {fileID: 9095252506902563192, guid: 3e26a1cf0b592074db846574e0d6ebf7,
+        type: 3}
+      propertyPath: tunnelInPrefab
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 9095252506902563192, guid: 3e26a1cf0b592074db846574e0d6ebf7,
+        type: 3}
+      propertyPath: tunnelOutPrefab
+      value: 
+      objectReference: {fileID: 0}
     m_RemovedComponents:
     - {fileID: 901418720055349853, guid: 3e26a1cf0b592074db846574e0d6ebf7, type: 3}
     m_RemovedGameObjects: []

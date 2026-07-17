@@ -33,7 +33,8 @@ namespace Wayfu.Lamkn
             if (drawPath && level.PathWaypoints != null && level.PathWaypoints.Count >= 2)
             {
                 // Vẽ ĐÚNG đường bo góc như runtime + 2 mép theo PathWidth.
-                var s = RoundedPolylinePath.BuildSamples(level.PathWaypoints, level.IsClosed, level.CornerRadius);
+                var s = RoundedPolylinePath.BuildSamples(level.PathWaypoints, level.IsClosed,
+                                                         level.CornerRadius, 8, level.PathStyle);
                 if (s != null)
                 {
                     float half = Mathf.Max(0f, level.PathWidth) * 0.5f;

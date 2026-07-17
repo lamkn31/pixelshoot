@@ -21,6 +21,10 @@ namespace Wayfu.Lamkn
         [Header("Path shape (loop) — riêng theo level")]
         public List<Vector3> PathWaypoints = new List<Vector3>();
         public bool IsClosed = true;
+        [Tooltip("RoundedCorner = nối thẳng + bo góc theo CornerRadius. Bezier = cong mượt toàn phần " +
+                 "(Catmull-Rom → Bezier bậc 3), vẫn đi qua mọi waypoint; CornerRadius không dùng.")]
+        public PathStyle PathStyle = PathStyle.RoundedCorner;
+        [Tooltip("Bán kính bo góc — CHỈ dùng khi PathStyle = RoundedCorner.")]
         public float CornerRadius = 1f;
         [Tooltip("Độ rộng mặt đường (world units) — LineRenderer của PathManager và preview trong Level Tool.")]
         [Min(0f)] public float PathWidth = 1.5f;

@@ -18,11 +18,21 @@ namespace Wayfu.Lamkn
         [Tooltip("Material mặt đường. Bỏ trống thì giữ material đang gán trên LineRenderer.")]
         [SerializeField] private Material pathMaterial;
 
+        [Header("Tunnel (chỉ path HỞ)")]
+        [Tooltip("Prefab cửa hầm ở ĐẦU path — nơi gun đi ra. Chỉ sinh khi LevelData.IsClosed = false.")]
+        [SerializeField] private GameObject tunnelInPrefab;
+        [Tooltip("Prefab cửa hầm ở CUỐI path — nơi gun đi vào. Chỉ sinh khi LevelData.IsClosed = false.")]
+        [SerializeField] private GameObject tunnelOutPrefab;
+        [Tooltip("Tunnel quay mặt về điểm cách nó ĐOẠN NÀY dọc path (world units). Lớn quá thì hướng bị " +
+                 "cắt ngang khúc cua; nhỏ quá thì nhiễu vì 2 điểm gần trùng nhau.")]
+        [Min(0.01f)] [SerializeField] private float tunnelFaceDistance = 1f;
+
         [Header("Queue")]
         [Tooltip("Thời gian (giây) gun bay từ slot ra chỗ đứng chờ ở điểm vào path (pos 0).")]
         [SerializeField] private float queueMoveDuration = 0.15f;
 
         private RoundedPolylinePath _path;
+        private GameObject _tunnelIn, _tunnelOut;
         private readonly List<Gun> _guns = new List<Gun>();    // [0] = gun vào trước nhất
         private readonly List<Gun> _queue = new List<Gun>();   // [0] = gun sẽ vào path kế tiếp
         private float _gunSpeed = 3f;
@@ -53,6 +63,38 @@ namespace Wayfu.Lamkn
             _path = CreatePath(level);
             ApplyPathLine(_path);
             SetPathWidth(level.PathWidth);
+            SpawnTunnels(level);
+        }
+
+        /// <summary>
+        /// Sinh cửa hầm ở 2 ĐẦU MÚT của path hở. Path kín thì không có đầu mút nào để đặt → bỏ qua.
+        /// Cả 2 tunnel đều quay mặt về điểm cách nó tunnelFaceDistance dọc path, tức đều nhìn VÀO trong
+        /// đường: cửa vào nhìn theo chiều gun chạy ra, cửa ra nhìn ngược lại đón gun đang tới.
+        /// </summary>
+        private void SpawnTunnels(LevelData level)
+        {
+            if (level.IsClosed || _path == null || _path.samples == null || _path.samples.Length < 2) return;
+
+            float len = _path.TotalLength;
+            float x = Mathf.Min(tunnelFaceDistance, len); // path ngắn hơn x → nhìn thẳng sang đầu kia
+            var s = _path.samples;
+
+            // KHÔNG dùng GetPointAtDistance cho 2 đầu mút: nó Mathf.Repeat nên distance = TotalLength
+            // wrap về 0, cửa ra sẽ nhảy về đúng chỗ cửa vào. Lấy thẳng từ mảng samples.
+            _tunnelIn = CreateTunnel(tunnelInPrefab, "TunnelIn", s[0], _path.GetPointAtDistance(x));
+            _tunnelOut = CreateTunnel(tunnelOutPrefab, "TunnelOut", s[s.Length - 1],
+                                      _path.GetPointAtDistance(len - x));
+        }
+
+        private GameObject CreateTunnel(GameObject prefab, string name, Vector3 pos, Vector3 lookAt)
+        {
+            if (prefab == null) return null;
+            var go = Instantiate(prefab, pos, Quaternion.identity, transform);
+            go.name = name;
+
+            Vector3 dir = lookAt - pos; dir.y = 0f; // chỉ xoay trên sàn, không chúc lên/xuống
+            if (dir.sqrMagnitude > 1e-6f) go.transform.rotation = Quaternion.LookRotation(dir.normalized, Vector3.up);
+            return go;
         }
 
         private RoundedPolylinePath CreatePath(LevelData level)
@@ -63,6 +105,7 @@ namespace Wayfu.Lamkn
 
             var path = go.AddComponent<RoundedPolylinePath>();
             path.isClosed = level.IsClosed;
+            path.style = level.PathStyle;
             path.cornerRadius = level.CornerRadius;
             path.waypoints = new List<Transform>();
 
@@ -205,6 +248,10 @@ namespace Wayfu.Lamkn
             // pathLine nằm trên scene (không bị destroy cùng GunPath) → phải xoá điểm của level cũ.
             if (pathLine != null) pathLine.positionCount = 0;
             if (_path != null) { Destroy(_path.gameObject); _path = null; }
+            // Tunnel là con của PathManager (không phải của GunPath) → phải tự dọn, không thì level sau
+            // chồng thêm 1 cặp nữa.
+            if (_tunnelIn != null) { Destroy(_tunnelIn); _tunnelIn = null; }
+            if (_tunnelOut != null) { Destroy(_tunnelOut); _tunnelOut = null; }
         }
 
         /// <summary>Có gun nào trên path còn cell cùng màu để bắn không (check LOSE).</summary>

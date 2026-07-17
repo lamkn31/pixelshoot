@@ -509,7 +509,8 @@ namespace Wayfu.Lamkn
 
             // Đường bo góc dùng CHUNG với runtime; dựng 1 lần rồi cả path lẫn vòng range đều xài.
             _pathSamples = _target.PathWaypoints != null && _target.PathWaypoints.Count >= 2
-                ? RoundedPolylinePath.BuildSamples(_target.PathWaypoints, _target.IsClosed, _target.CornerRadius)
+                ? RoundedPolylinePath.BuildSamples(_target.PathWaypoints, _target.IsClosed,
+                                                   _target.CornerRadius, 8, _target.PathStyle)
                 : null;
 
             // Path: vẽ ĐÚNG đường bo góc, kèm 2 mép theo PathWidth để thấy mặt đường rộng bao nhiêu.
@@ -1364,7 +1365,13 @@ namespace Wayfu.Lamkn
             if (!_foldPath) { EditorGUILayout.EndVertical(); return; }
 
             EditorGUILayout.PropertyField(_so.FindProperty("IsClosed"));
-            EditorGUILayout.PropertyField(_so.FindProperty("CornerRadius"));
+            EditorGUILayout.PropertyField(_so.FindProperty("PathStyle"), new GUIContent("Path Style"));
+            // CornerRadius chỉ có tác dụng với RoundedCorner — Bezier bỏ qua nó hoàn toàn.
+            using (new EditorGUI.DisabledScope(_target.PathStyle != PathStyle.RoundedCorner))
+                EditorGUILayout.PropertyField(_so.FindProperty("CornerRadius"));
+            if (!_target.IsClosed)
+                EditorGUILayout.HelpBox("Path HỞ → PathManager sinh TunnelIn ở đầu và TunnelOut ở cuối "
+                    + "(gán prefab trên PathManager trong scene).", MessageType.None);
             EditorGUILayout.PropertyField(_so.FindProperty("PathWidth"), new GUIContent("Path Width"));
 
             var wp = _so.FindProperty("PathWaypoints");
