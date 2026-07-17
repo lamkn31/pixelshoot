@@ -44,6 +44,7 @@ namespace Wayfu.Lamkn
         private float _fireRange = 3f;
         private float _fireAngle = 360f; // góc quạt phát hiện; 360 = quét tròn
         private float _bulletSpeed = 14f;
+        private GunFireMode _fireMode = GunFireMode.Single;
         private Renderer[] _renderers;
         private Coroutine _moveRoutine;
         private Pooler<Gun> _pool;
@@ -114,13 +115,15 @@ namespace Wayfu.Lamkn
             _renderers = list.ToArray();
         }
 
-        public void Init(GunData data, float fireInterval, float fireRange, float fireAngle, float bulletSpeed)
+        public void Init(GunData data, float fireInterval, float fireRange, float fireAngle, float bulletSpeed,
+                         GunFireMode fireMode)
         {
             Data = new GunData { Color = data.Color, CountBullet = data.CountBullet };
             _fireInterval = fireInterval;
             _fireRange = fireRange;
             _fireAngle = fireAngle;
             _bulletSpeed = bulletSpeed;
+            _fireMode = fireMode;
 
             // Reset trạng thái (item pooled có thể tái dùng).
             _lastLap = 0;
@@ -321,21 +324,36 @@ namespace Wayfu.Lamkn
         private void Fire(Barrel b)
         {
             b.FiredAtTarget = true; // từ giờ cell này là "bắn dở" — phải bắn hết, không được bỏ giữa chừng
-            Data.CountBullet--;
-            UpdateLabel();
 
+            // BurstPerCell: nhả TRỌN 1 loạt đúng bằng số block cell còn nợ (Available), mỗi viên nhắm 1
+            // block trong stack → cả cell vỡ trong 1 lượt. Kẹp theo CountBullet phòng khi băng không đủ.
+            int shots = _fireMode == GunFireMode.BurstPerCell
+                ? Mathf.Min(b.Target.Available, Data.CountBullet)
+                : 1;
+
+            // Block bị phá từ TRÊN xuống (xem BlockCell.HitOnce) → viên đầu nhắm block trên cùng, viên sau
+            // lùi dần xuống. Chốt 'top' trước vòng lặp: ReserveHit không đổi StackCount nên nó đứng yên.
+            int top = Mathf.Max(0, b.Target.StackCount - 1);
+            for (int i = 0; i < shots; i++) FireOne(b, Mathf.Max(0, top - i));
+
+            UpdateLabel();
+            if (Data.CountBullet <= 0) Die();
+        }
+
+        private void FireOne(Barrel b, int blockIndex)
+        {
+            Data.CountBullet--;
             b.Target.ReserveHit();
+
             var bullet = PoolManager.Instance != null ? PoolManager.Instance.GetBullet() : null;
             Vector3 from = b.Muzzle != null ? b.Muzzle.position : transform.position;
             if (bullet != null)
-                bullet.Launch(from, b.Target, _bulletSpeed, Data.Color);
+                bullet.Launch(from, b.Target, _bulletSpeed, Data.Color, b.Target.StackOffset(blockIndex));
             else
             {
                 b.Target.ApplyHit(); // fallback không có pool
                 GameController.Instance?.OnBoardChanged();
             }
-
-            if (Data.CountBullet <= 0) Die();
         }
 
         private void Die()

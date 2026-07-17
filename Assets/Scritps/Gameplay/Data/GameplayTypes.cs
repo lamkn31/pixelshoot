@@ -11,6 +11,14 @@ namespace Wayfu.Lamkn
     public enum BlockObstacleType { None, Crate, Lock, Ice, Mystery, Barricade }
 
     /// <summary>
+    /// Cách nòng nhả đạn vào cell đã chốt.
+    /// <para><b>Single</b>: mỗi nhịp FireInterval nhả 1 viên, gặm dần cho tới khi cell sạch.</para>
+    /// <para><b>BurstPerCell</b>: chốt cell xong nhả LUÔN 1 loạt đúng bằng số block còn lại của cell,
+    /// mỗi viên bay tới 1 block trong stack → cả cell vỡ trong 1 lượt.</para>
+    /// </summary>
+    public enum GunFireMode { Single, BurstPerCell }
+
+    /// <summary>
     /// Cách dựng đường cong của path từ danh sách waypoint.
     /// <para><b>RoundedCorner</b>: nối thẳng waypoint, chỉ BO tròn tại góc theo CornerRadius → đa số là
     /// đoạn thẳng.</para>

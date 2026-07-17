@@ -57,6 +57,13 @@ namespace Wayfu.Lamkn
         }
 
         public int StackCount => _blocks.Count;
+
+        /// <summary>
+        /// Offset từ TÂM cell tới block thứ i trong stack (0 = dưới cùng) — stack xếp theo trục Y.
+        /// Trả offset chứ không trả vị trí world: cell còn trượt lúc dồn hàng, đạn phải bám theo cell
+        /// (xem Bullet.Update) chứ không nhắm vào 1 điểm chết trong không gian.
+        /// </summary>
+        public Vector3 StackOffset(int i) => Vector3.up * _stackSpacing * Mathf.Max(0, i);
         /// <summary>Số block chưa bị đạn "đặt chỗ" (đạn đang bay) — gun chỉ bắn khi còn &gt; 0.</summary>
         public int Available => _blocks.Count - _pendingHits;
         public bool IsEmpty => _blocks.Count == 0;

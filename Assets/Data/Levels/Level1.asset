@@ -26,18 +26,30 @@ MonoBehaviour:
   Slots:
   - Guns:
     - Color: 2
-      CountBullet: 120
+      CountBullet: 60
     - Color: 3
-      CountBullet: 120
+      CountBullet: 60
     - Color: 2
-      CountBullet: 90
+      CountBullet: 60
+    - Color: 3
+      CountBullet: 60
+    - Color: 2
+      CountBullet: 60
+    - Color: 3
+      CountBullet: 30
   - Guns:
     - Color: 3
-      CountBullet: 120
+      CountBullet: 60
     - Color: 2
-      CountBullet: 120
+      CountBullet: 60
     - Color: 3
-      CountBullet: 90
+      CountBullet: 60
+    - Color: 2
+      CountBullet: 60
+    - Color: 3
+      CountBullet: 60
+    - Color: 2
+      CountBullet: 30
   HoleCapacity: 3
   Grids:
   - Shape: 1

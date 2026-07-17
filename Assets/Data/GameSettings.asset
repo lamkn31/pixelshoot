@@ -16,10 +16,11 @@ MonoBehaviour:
   MaxGunOnPath: 5
   GunSpeed: 12
   GunSpacing: 3
-  FireInterval: 0.026
+  FireInterval: 0.02
+  FireMode: 1
   GunFireRange: 12
   GunFireAngle: 50
   FrontStationDistance: 0
-  BulletSpeed: 154
+  BulletSpeed: 100
   BlockStackSpacing: 1
-  BlockCollapseDuration: 0.065
+  BlockCollapseDuration: 0.2

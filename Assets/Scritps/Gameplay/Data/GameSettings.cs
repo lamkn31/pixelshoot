@@ -19,6 +19,11 @@ namespace Wayfu.Lamkn
         [Tooltip("Khoảng cách (arc-length) giữa các station gun trên path.")]
         public float GunSpacing = 1.2f;
         public float FireInterval = 0.25f;
+        [Tooltip("Single = mỗi nhịp FireInterval nhả 1 viên, gặm dần cho tới khi cell sạch.\n" +
+                 "BurstPerCell = chốt cell xong nhả LUÔN cả loạt đúng bằng số block còn lại của cell, mỗi " +
+                 "viên bay tới 1 block trong stack → cả cell vỡ trong 1 lượt. FireInterval khi đó chỉ là " +
+                 "nhịp nghỉ giữa 2 CELL, không phải giữa 2 viên.")]
+        public GunFireMode FireMode = GunFireMode.Single;
         [Tooltip("Bán kính vùng CHỌN target của mỗi nòng. Chỉ lọc lúc CHỌN, không phải điều kiện bắn: " +
                  "chốt được cell rồi thì nòng bắn dứt điểm hết stack, kể cả khi gun đã trôi qua và cell " +
                  "đã ra ngoài tầm.")]
