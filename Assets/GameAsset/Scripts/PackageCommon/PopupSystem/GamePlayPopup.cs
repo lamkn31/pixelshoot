@@ -32,6 +32,9 @@ namespace Wayfu.Lamkn
 
         [Header("Setting")]
         [SerializeField] private Button settingButton;
+        [Tooltip("Giấu nút Setting ở level 1 — quy ước của game gốc (màn 1 là tutorial). Tắt nếu game " +
+                 "này không có tutorial ở màn đầu, không thì người chơi vào game là mất nút Setting.")]
+        [SerializeField] private bool hideSettingOnFirstLevel;
 
         [Header("Completed Tick")]
         [Tooltip("Pool of UI checkmark images shown over a car when it Completes. Lives on this popup so its tick parent + canvas are colocated with the gameplay HUD.")]
@@ -165,12 +168,13 @@ namespace Wayfu.Lamkn
         }
 
         /// <summary>
-        /// Ẩn nút Setting ở level 1 (tutorial). Gọi sau ApplyDifficulty để ghi đè trạng thái
-        /// settingObjects mà ApplyDifficulty vừa bật theo difficulty.
+        /// Ẩn nút Setting ở level 1 (tutorial) — chỉ khi <see cref="hideSettingOnFirstLevel"/> bật.
+        /// Gọi sau ApplyDifficulty để ghi đè trạng thái settingObjects mà ApplyDifficulty vừa bật
+        /// theo difficulty.
         /// </summary>
         private void ApplySettingVisibility(int level, int difficulty)
         {
-            bool show = level != 1;
+            bool show = !hideSettingOnFirstLevel || level != 1;
             if (settingButton != null) settingButton.gameObject.SetActive(show);
             if (!show && settingObjects != null)
             {

@@ -7,6 +7,27 @@ namespace Wayfu.Lamkn
     /// <summary>Độ khó của level (~ GameDifficulty của PixelShoot_2).</summary>
     public enum GameDifficulty { Easy, Normal, Hard, VeryHard, Expert }
 
+    public static class GameDifficultyExt
+    {
+        /// <summary>
+        /// Đổi <see cref="GameDifficulty"/> (5 mức, dùng trong data level) sang LevelDifficulty (3 mức,
+        /// dùng cho UI).
+        /// <para>BẮT BUỘC đi qua đây trước khi đưa vào popup: GamePlayPopup có đúng 3 slot
+        /// difficultyObjects/settingObjects, truyền thẳng GameDifficulty thì VeryHard=3 / Expert=4 vượt
+        /// mảng → ApplyDifficulty tắt sạch, mất luôn cả icon Setting.</para>
+        /// </summary>
+        public static LevelDifficulty ToLevelDifficulty(this GameDifficulty d)
+        {
+            switch (d)
+            {
+                case GameDifficulty.Hard: return LevelDifficulty.Hard;
+                case GameDifficulty.VeryHard: return LevelDifficulty.VeryHard;
+                case GameDifficulty.Expert: return LevelDifficulty.VeryHard;
+                default: return LevelDifficulty.Easy; // Easy, Normal
+            }
+        }
+    }
+
     /// <summary>Loại obstacle gắn lên block/cell (~ BlockObstacleType).</summary>
     public enum BlockObstacleType { None, Crate, Lock, Ice, Mystery, Barricade }
 

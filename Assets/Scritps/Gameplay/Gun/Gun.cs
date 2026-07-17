@@ -123,6 +123,13 @@ namespace Wayfu.Lamkn
             ArmForNewLap();
             if (_moveRoutine != null) { StopCoroutine(_moveRoutine); _moveRoutine = null; }
 
+            // Item pooled tái dùng: gun vừa chạy trên path mang theo rotation của khúc đường CUỐI
+            // (RoundedPolylineFollower ghi thẳng vào root). Không reset thì vào màn/retry mỗi khẩu trong
+            // slot quay một kiểu theo chỗ nó chết ở lượt trước.
+            // localRotation: GunSlot.Fill đã SetParent vào slot TRƯỚC khi gọi Init → gun thẳng hàng theo
+            // slot, slot có xoay thì gun xoay theo.
+            transform.localRotation = Quaternion.identity;
+
             // Material lấy từ GlobalConfigManager theo TypeColor (không tô material.color nữa).
             // sharedMaterial chỉ thay slot 0 — 'machine' có 2 slot, slot 1 (viền/chi tiết) giữ nguyên.
             if (_renderers == null) CollectRenderers();

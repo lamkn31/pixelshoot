@@ -138,7 +138,7 @@ namespace Wayfu.Lamkn
             GridBlockManager.Instance.Build(_level);
             SlotManager.Instance.Build(_level);
             SpawnBoardProps(_level);
-            GameController.Instance.StartLevel();
+            GameController.Instance.StartLevel(); // bàn chơi xong → GameController vào Playing + dựng HUD
         }
 
         public void Retry() => Build();
