@@ -72,6 +72,8 @@ namespace Wayfu.Lamkn
         // Đối tượng đang chọn trong khung giữa (chỉ khi Paint = None).
         private readonly List<(int grid, int cell)> _selCells = new List<(int, int)>();
         private int _selSlot = -1, _selGun = -1;    // gun (chọn 1)
+        // Cell trong hàng đợi Spawner đang chọn (chỉ 1). qi < 0 = không chọn gì.
+        private (int grid, int cell, int qi) _selQueue = (-1, -1, -1);
 
         // Giá trị áp dụng CHUNG cho nhiều cell đang chọn.
         private TypeColor _multiColor = TypeColor.Red;
@@ -91,12 +93,21 @@ namespace Wayfu.Lamkn
 
         private bool IsCellSelected(int gi, int flat) => _selCells.Contains((gi, flat));
 
-        private void SelectGun(int si, int gi) { _selSlot = si; _selGun = gi; _selCells.Clear(); }
+        private void SelectGun(int si, int gi) { _selSlot = si; _selGun = gi; _selCells.Clear(); ClearQueueSel(); }
+
+        private void ClearQueueSel() => _selQueue = (-1, -1, -1);
+        private bool IsQueueSelected(int gi, int flat, int qi) => _selQueue == (gi, flat, qi);
+
+        private void SelectQueue(int gi, int flat, int qi)
+        {
+            _selQueue = (gi, flat, qi);
+            _selCells.Clear(); _selSlot = -1; _selGun = -1;
+        }
 
         // Ctrl/Cmd = chọn thêm (bấm lại thì bỏ chọn).
         private void ToggleCell(int gi, int flat, bool additive)
         {
-            _selSlot = -1; _selGun = -1;
+            _selSlot = -1; _selGun = -1; ClearQueueSel();
             var key = (gi, flat);
             if (!additive) { _selCells.Clear(); _selCells.Add(key); return; }
             if (!_selCells.Remove(key)) _selCells.Add(key);
@@ -741,6 +752,7 @@ namespace Wayfu.Lamkn
 
             // Cuối cùng: quét chọn / click chọn. Đặt sau mọi handle nên nếu handle đã e.Use() thì bỏ qua.
             HandleMarquee(area);
+            HandleDeleteKey(area);
 
             if (_camMode) cam.ResetAspect();
         }
@@ -794,11 +806,67 @@ namespace Wayfu.Lamkn
 
         private void ClickSelect(Vector2 pos, bool additive)
         {
+            // Ghost hàng đợi xét TRƯỚC cell thật: nó vẽ đè lên vùng của các hàng sâu hơn, không ưu tiên
+            // thì click trúng ghost lại chọn nhầm cell nằm dưới. Ô "+" (qi >= Queue.Count) không chọn được.
+            foreach (var h in _hitQueue)
+                if (h.rect.Contains(pos) && h.qi < QueueSize(h.grid, h.flat))
+                { SelectQueue(h.grid, h.flat, h.qi); return; }
             foreach (var h in _hitCells)
                 if (h.rect.Contains(pos)) { ToggleCell(h.grid, h.flat, additive); return; }
             foreach (var h in _hitGuns)
                 if (h.rect.Contains(pos)) { SelectGun(h.slot, h.gun); return; }
-            if (!additive) { _selCells.Clear(); _selSlot = -1; _selGun = -1; } // click ra chỗ trống = bỏ chọn
+            // click ra chỗ trống = bỏ chọn
+            if (!additive) { _selCells.Clear(); _selSlot = -1; _selGun = -1; ClearQueueSel(); }
+        }
+
+        private int QueueSize(int gi, int flat)
+        {
+            if (_target?.Grids == null || gi < 0 || gi >= _target.Grids.Count) return 0;
+            var cells = _target.Grids[gi]?.Cells;
+            if (cells == null || flat < 0 || flat >= cells.Count) return 0;
+            return cells[flat]?.Queue?.Count ?? 0;
+        }
+
+        /// <summary>
+        /// Phím Delete/Backspace: xoá thứ đang chọn. Cell trong hàng đợi Spawner → rút khỏi Queue. Cell
+        /// trên grid → đặt stack = 0, tức thành LỖ: runtime không dựng cell VÀ không cho cell nào dồn vào
+        /// (xem GridBlockManager.CanEnter) — grid giữ nguyên hình dạng, chỉ thủng đúng ô đó.
+        /// </summary>
+        private void HandleDeleteKey(Rect area)
+        {
+            var e = Event.current;
+            if (e.type != EventType.KeyDown) return;
+            if (e.keyCode != KeyCode.Delete && e.keyCode != KeyCode.Backspace) return;
+            if (!area.Contains(e.mousePosition)) return; // chỉ ăn khi chuột đang ở khung giữa
+
+            var grids = _so.FindProperty("Grids");
+            if (_selQueue.qi >= 0)
+            {
+                var q = QueueProp(grids, _selQueue.grid, _selQueue.cell);
+                if (q != null && _selQueue.qi < q.arraySize) q.DeleteArrayElementAtIndex(_selQueue.qi);
+                ClearQueueSel();
+                e.Use(); Repaint();
+                return;
+            }
+
+            if (_selCells.Count == 0) return;
+            foreach (var (gi, ci) in _selCells)
+            {
+                if (gi < 0 || gi >= grids.arraySize) continue;
+                var cells = grids.GetArrayElementAtIndex(gi).FindPropertyRelative("Cells");
+                if (ci < 0 || ci >= cells.arraySize) continue;
+                cells.GetArrayElementAtIndex(ci).FindPropertyRelative("BlockStackCt").intValue = 0;
+            }
+            _selCells.Clear();
+            e.Use(); Repaint();
+        }
+
+        private static SerializedProperty QueueProp(SerializedProperty grids, int gi, int flat)
+        {
+            if (gi < 0 || gi >= grids.arraySize) return null;
+            var cells = grids.GetArrayElementAtIndex(gi).FindPropertyRelative("Cells");
+            if (flat < 0 || flat >= cells.arraySize) return null;
+            return cells.GetArrayElementAtIndex(flat).FindPropertyRelative("Queue");
         }
 
         // Quét: mọi cell có ô GIAO với vùng quét đều được chọn.
@@ -950,7 +1018,7 @@ namespace Wayfu.Lamkn
                     col.a = 0.5f; // mờ = block chưa nhả ra, phân biệt với cell thật
                     var ir = RectIntersect(qr, area);
                     if (ir.width > 0f && ir.height > 0f) EditorGUI.DrawRect(ir, col);
-                    DrawOutline(qr, SpawnerCol, area);
+                    DrawOutline(qr, IsQueueSelected(gi, flatIdx, qi) ? Color.yellow : SpawnerCol, area);
                 }
                 else DrawOutline(qr, new Color(1f, 0.6f, 0.1f, 0.5f), area); // ô "+" rỗng
 
@@ -1215,11 +1283,44 @@ namespace Wayfu.Lamkn
         // Thông số của gun/cell đang click chọn trong khung giữa (chỉ hiện khi Paint Color = None).
         private void DrawSelectionSection()
         {
+            if (_selQueue.qi >= 0) { DrawSelectedQueueCell(); return; }
             if (_selGun >= 0) { DrawSelectedGun(); return; }
             if (_selCells.Count == 1) { DrawSelectedCell(_selCells[0].grid, _selCells[0].cell); return; }
             if (_selCells.Count > 1) { DrawMultiCellEdit(); return; }
             if (_paintColor == TypeColor.None)
-                EditorGUILayout.HelpBox("Paint = None → click chọn 1 GUN/CELL · KÉO để quét chọn nhiều cell · giữ CTRL để chọn thêm.", MessageType.None);
+                EditorGUILayout.HelpBox("Paint = None → click chọn 1 GUN/CELL (kể cả ô mờ hàng đợi Spawner) · "
+                    + "KÉO để quét chọn nhiều cell · giữ CTRL để chọn thêm · DELETE để xoá.", MessageType.None);
+        }
+
+        // 1 cell trong hàng đợi Spawner (ô mờ phía sau). Chọn bằng click khi Paint = None.
+        private void DrawSelectedQueueCell()
+        {
+            var grids = _so.FindProperty("Grids");
+            var q = QueueProp(grids, _selQueue.grid, _selQueue.cell);
+            if (q == null || _selQueue.qi >= q.arraySize) { ClearQueueSel(); return; }
+
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(
+                $"CELL SAU SPAWNER — Grid {_selQueue.grid} · #{_selQueue.cell} · thứ {_selQueue.qi + 1}",
+                EditorStyles.boldLabel);
+            if (GUILayout.Button("✕", BtnW)) { ClearQueueSel(); EditorGUILayout.EndHorizontal(); EditorGUILayout.EndVertical(); return; }
+            EditorGUILayout.EndHorizontal();
+
+            var it = q.GetArrayElementAtIndex(_selQueue.qi);
+            EditorGUILayout.PropertyField(it.FindPropertyRelative("Color"), new GUIContent("Màu"));
+            EditorGUILayout.PropertyField(it.FindPropertyRelative("BlockStackCt"),
+                new GUIContent("Số đạn (stack)", "Số block của cell này khi spawner đẩy nó ra — cũng là số " +
+                               "đạn cần để phá nó."));
+
+            EditorGUILayout.HelpBox("Ấn DELETE (chuột đang ở khung giữa) để xoá cell này khỏi hàng đợi.",
+                MessageType.None);
+            if (GUILayout.Button("Xoá cell này"))
+            {
+                q.DeleteArrayElementAtIndex(_selQueue.qi);
+                ClearQueueSel();
+            }
+            EditorGUILayout.EndVertical();
         }
 
         // Đặt giá trị CHUNG cho tất cả cell đang quét chọn.

@@ -343,8 +343,9 @@ namespace Wayfu.Lamkn
         public int BlockCol;
         [Tooltip("Vị trí trong cột: 0 = ngoài cùng (gần collector).")]
         public int SpawnerDepth;
-        [Tooltip("Số block xếp chồng trong cell (~ BlockStackCt).")]
-        [Min(1)] public int BlockStackCt = 3;
+        [Tooltip("Số block xếp chồng trong cell (~ BlockStackCt). 0 = ô LỖ: không dựng cell, và không cell " +
+                 "nào được dồn/refill vào đó — grid giữ nguyên hình, chỉ thủng đúng ô này.")]
+        [Min(0)] public int BlockStackCt = 3;
         [Tooltip("Normal = phá xong biến mất. Spawner = còn hàng đợi phía sau, phá xong thì đẩy cell kế ra.")]
         public BlockCellType Type = BlockCellType.Normal;
         [Tooltip("CHỈ dùng cho Spawner: các cell PHÍA SAU, đẩy ra lần lượt khi cell hiện tại bị phá hết.")]

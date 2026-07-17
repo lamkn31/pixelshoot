@@ -27,6 +27,12 @@ namespace Wayfu.Lamkn
         {
             public BlockGridData Data;
             public readonly List<BlockCell[]> Rows = new List<BlockCell[]>(); // [row][index]; null = đã phá
+            /// <summary>
+            /// [row][index] — true = ô LỖ, do designer xoá trong level (BlockStackCt &lt;= 0).
+            /// Phải tách khỏi "null vì bị bắn sạch": lỗ là VĨNH VIỄN, không cell nào được dồn hay refill
+            /// vào. Chỉ nhìn Rows[r][e] == null thì 2 thứ đó giống hệt nhau và lỗ sẽ bị lấp mất.
+            /// </summary>
+            public readonly List<bool[]> Holes = new List<bool[]>();
             public readonly List<SpawnerSource> Sources = new List<SpawnerSource>();
             public Transform Root;                 // node cha để gắn cell (kể cả cell refill)
             public Queue<PendingBlockData> Pending; // hàng đợi refill mức GRID (lấp hàng sâu nhất)
@@ -63,10 +69,13 @@ namespace Wayfu.Lamkn
                 {
                     int count = grid.ElementsInRow(r);
                     var row = new BlockCell[count];
+                    var holes = new bool[count];
                     for (int e = 0; e < count; e++)
                     {
                         var cellData = grid.GetCell(r, e);
-                        if (cellData == null || cellData.BlockStackCt <= 0) continue; // ô trống
+                        // Designer xoá ô này (stack <= 0) → LỖ vĩnh viễn: không dựng cell, và về sau cũng
+                        // không cho cell nào dồn/refill vào (xem AdvanceOnce, TryRefill).
+                        if (cellData == null || cellData.BlockStackCt <= 0) { holes[e] = true; continue; }
                         row[e] = CreateCell(gr, $"Cell_r{r}_e{e}", grid.CellPos(r, e), cellData);
 
                         // Cell Spawner: ô này thành NGUỒN cố định. Bản thân cell là cell thường (vẫn dồn lên).
@@ -82,6 +91,7 @@ namespace Wayfu.Lamkn
                             });
                     }
                     gr.Rows.Add(row);
+                    gr.Holes.Add(holes);
                 }
                 gr.HasIndicators = gr.Sources.Count > 0; // mồi cờ trước, Refresh tự cập nhật lại sau
                 RefreshSpawnerIndicators(gr);
@@ -291,6 +301,17 @@ namespace Wayfu.Lamkn
             gr.HasIndicators = any;
         }
 
+        /// <summary>Ô (row, col) có nhận cell dồn/refill vào được không: phải trong mảng, đang trống, và
+        /// KHÔNG phải lỗ designer xoá.</summary>
+        private static bool CanEnter(GridRuntime gr, int row, int col, BlockCell[] rowCells)
+        {
+            if (col < 0 || col >= rowCells.Length || rowCells[col] != null) return false;
+            return !IsHole(gr, row, col);
+        }
+
+        private static bool IsHole(GridRuntime gr, int row, int col) =>
+            row >= 0 && row < gr.Holes.Count && col >= 0 && col < gr.Holes[row].Length && gr.Holes[row][col];
+
         // Dồn 1 bước: cell ở hàng r tiến lên ô CHẶN nó ở hàng r-1 nếu ô đó trống — dùng đúng map góc của
         // FrontIndices. Cột thẳng (Rect / Arc-Uniform) → 1:1. Cột lệch (Arc-ArcLength) → cell giữa có 2 ô
         // để dồn lên (vd index 1 của hàng 5 dồn được lên index 0 hoặc 1 của hàng 4); 2 ô ngoài cùng khớp 1:1.
@@ -307,10 +328,12 @@ namespace Wayfu.Lamkn
                     if (cell == null) continue;
 
                     BlockGridData.FrontIndices(cur.Length, prev.Length, e, out int a, out int b);
+                    // Lỗ do designer xoá KHÔNG phải chỗ trống để dồn vào — grid 3x3 xoá ô (0,0) thì cột 0
+                    // dừng ở hàng 1, không bao giờ lấp kín hàng 0.
                     int slot = -1;
-                    if (a >= 0 && a < prev.Length && prev[a] == null) slot = a;
-                    else if (b >= 0 && b < prev.Length && prev[b] == null) slot = b;
-                    if (slot < 0) continue; // ô trước còn cell → bị chặn, chưa dồn được
+                    if (CanEnter(gr, r - 1, a, prev)) slot = a;
+                    else if (CanEnter(gr, r - 1, b, prev)) slot = b;
+                    if (slot < 0) continue; // ô trước còn cell / là lỗ → bị chặn, chưa dồn được
 
                     prev[slot] = cell;
                     cur[e] = null;
@@ -373,7 +396,7 @@ namespace Wayfu.Lamkn
 
             for (int e = 0; e < count && gr.Pending.Count > 0; e++)
             {
-                if (row[e] != null) continue;
+                if (row[e] != null || IsHole(gr, rowIndex, e)) continue; // lỗ designer xoá → không lấp
                 var p = gr.Pending.Dequeue();
                 if (p == null || p.BlockStackCt <= 0) continue;
 
