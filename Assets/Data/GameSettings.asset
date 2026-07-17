@@ -14,12 +14,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   SlotGunSpacing: 3
   MaxGunOnPath: 5
-  GunSpeed: 6.5
+  GunSpeed: 12
   GunSpacing: 3
-  FireInterval: 0.04
-  GunFireRange: 8
-  GunFireAngle: 45
+  FireInterval: 0.026
+  GunFireRange: 12
+  GunFireAngle: 50
   FrontStationDistance: 0
-  BulletSpeed: 100
+  BulletSpeed: 154
   BlockStackSpacing: 1
-  BlockCollapseDuration: 0.1
+  BlockCollapseDuration: 0.065
