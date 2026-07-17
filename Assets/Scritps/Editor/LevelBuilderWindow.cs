@@ -538,42 +538,48 @@ namespace Wayfu.Lamkn
                 }
             }
 
-            // Quạt PHÁT HIỆN của gun tại ĐIỂM VÀO path — mọi gun đều xuất phát từ đây rồi chạy dọc path.
-            // Gun chỉ bắt VÀ chỉ bắn cell nằm trong quạt này. Quạt mở GunFireAngle độ
-            // quanh HƯỚNG PATH tại điểm vào — đúng như runtime, vì thân gun luôn quay theo đường ray.
-            // GunFireAngle = 360 thì vẽ vòng tròn như cũ.
+            // HAI quạt bắn của gun tại ĐIỂM VÀO path — mọi gun đều xuất phát từ đây rồi chạy dọc path.
+            // Gun KHÔNG quay mặt về target: thân luôn hướng theo đường ray. Mỗi nòng quét TỪ hướng trước
+            // mặt rồi toả sang sườn của nó đúng GunFireAngle độ — 2 quạt chung mép ở trục trước mặt, nòng
+            // phải (R) toả sang phải, nòng trái (L) sang trái. Mỗi nòng có target riêng và không bắn trùng
+            // cell với nòng kia (xem Gun.TickBarrel). GunFireAngle = 180 thì 2 quạt phủ kín vòng tròn.
             if (_showRange && _pathSamples != null && _pathSamples.Length >= 2)
             {
                 var gs = GameSettings.Instance;
                 float rng = gs != null ? gs.GunFireRange : 3f;
-                float ang = gs != null ? gs.GunFireAngle : 360f;
+                float spread = Mathf.Clamp(gs != null ? gs.GunFireAngle : 360f, 0f, 180f);
                 float front = gs != null ? gs.FrontStationDistance : 0f;
                 Vector3 ctr = PathPointAt(front);
-                Handles.color = new Color(1f, 0.85f, 0.2f, 0.9f);
+                Vector2 c = Proj(ctr);
 
                 // Hướng path tại điểm vào: look-ahead 0.05 y hệt RoundedPolylineFollower.
                 Vector3 fwd = PathPointAt(front + 0.05f) - ctr; fwd.y = 0f;
                 if (fwd.sqrMagnitude > 1e-6f) fwd.Normalize(); else fwd = Vector3.forward;
 
-                const int SEG = 26;
-                bool full = ang >= 360f;
-                Vector3 Dir(int k) => full
-                    ? new Vector3(Mathf.Cos(k / (float)SEG * Mathf.PI * 2f), 0f,
-                                  Mathf.Sin(k / (float)SEG * Mathf.PI * 2f))
-                    : Quaternion.AngleAxis(-ang * 0.5f + ang * k / SEG, Vector3.up) * fwd;
+                var sideLbl = new GUIStyle(EditorStyles.miniBoldLabel);
+                sideLbl.normal.textColor = new Color(1f, 0.9f, 0.4f);
+                const int SEG = 18;
+                for (int s = 0; s < 2; s++)
+                {
+                    float sign = s == 0 ? 1f : -1f; // +1 = nòng phải, −1 = nòng trái
+                    Vector3 D(int k) => Quaternion.AngleAxis(spread * sign * k / SEG, Vector3.up) * fwd;
 
-                Vector2 prev = Proj(ctr + Dir(0) * rng);
-                for (int k = 1; k <= SEG; k++)
-                {
-                    Vector2 s = Proj(ctr + Dir(k) * rng);
-                    Line(prev, s); prev = s;
+                    Handles.color = new Color(1f, 0.85f, 0.2f, 0.5f);
+                    Vector2 prev = Proj(ctr + D(0) * rng);
+                    for (int k = 1; k <= SEG; k++) { Vector2 p = Proj(ctr + D(k) * rng); Line(prev, p); prev = p; }
+                    Line(c, Proj(ctr + D(SEG) * rng)); // mép NGOÀI; mép trong trùng trục trước mặt, vẽ dưới
+
+                    Handles.color = new Color(1f, 0.9f, 0.4f, 0.6f);
+                    Vector2 outTip = Proj(ctr + D(SEG) * rng);
+                    if (area.Contains(outTip))
+                        GUI.Label(new Rect(outTip.x + 4f, outTip.y - 8f, 14f, 14f), s == 0 ? "R" : "L", sideLbl);
                 }
-                Vector2 c = Proj(ctr);
-                if (!full) // hai cạnh quạt về tâm — thiếu thì cung trông như đường trôi lơ lửng
-                {
-                    Line(c, Proj(ctr + Dir(0) * rng));
-                    Line(c, Proj(ctr + Dir(SEG) * rng));
-                }
+
+                // Trục TRƯỚC MẶT = mép chung của 2 quạt, cũng là hướng gun chạy.
+                Handles.color = new Color(1f, 0.85f, 0.2f, 1f);
+                Vector2 fTip = Proj(ctr + fwd * rng);
+                Line(c, fTip); ArrowHead(c, fTip);
+
                 FillRect(new Rect(c.x - 3, c.y - 3, 6, 6), Color.yellow);
             }
 

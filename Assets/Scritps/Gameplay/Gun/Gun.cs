@@ -20,15 +20,11 @@ namespace Wayfu.Lamkn
         public TypeColor Color => Data.Color;
         public GunSlot Slot { get; private set; }
 
-        [Header("Ngắm bắn")]
-        [Tooltip("Nòng súng: xoay mặt về target khi có, không có thì trùng hướng path. Bỏ trống sẽ tự tìm " +
-                 "child có tên chứa 'canon'. Thân 'machine' không cần gán — nó bám hướng path theo root.")]
-        [SerializeField] private Transform canon;
-        [Tooltip("Điểm đạn xuất phát. Nên đặt ở đầu nòng (child của canon). Bỏ trống → dùng canon, " +
-                 "không có canon → gốc gun.")]
-        [SerializeField] private Transform muzzle;
-        [Tooltip("Tốc độ xoay nòng (độ/giây). Để 0 = quay tức thì sang target.")]
-        [SerializeField] private float canonTurnSpeed = 540f;
+        [Header("Nòng bắn (2 bên)")]
+        [Tooltip("Điểm đạn xuất phát của nòng BÊN PHẢI (+X local của gun). Bỏ trống → bắn từ gốc gun.")]
+        [SerializeField] private Transform muzzleRight;
+        [Tooltip("Điểm đạn xuất phát của nòng BÊN TRÁI (−X local của gun). Bỏ trống → bắn từ gốc gun.")]
+        [SerializeField] private Transform muzzleLeft;
         [Tooltip("Mất target bao lâu (giây) thì coi như quạt đã trôi qua grid → khoá bắn tới hết vòng. " +
                  "PHẢI lớn hơn GameSettings.BlockCollapseDuration: lúc cột đang dồn mọi cell đều " +
                  "PendingEntry nên target hụt trong chốc lát là bình thường, khoá ngay là gun chết oan giữa cột.")]
@@ -48,27 +44,37 @@ namespace Wayfu.Lamkn
         private float _fireRange = 3f;
         private float _fireAngle = 360f; // góc quạt phát hiện; 360 = quét tròn
         private float _bulletSpeed = 14f;
-        private float _fireTimer;
-        private BlockCell _currentTarget;
-        private int _targetGen; // Generation của target lúc chốt — lệch = object pool đã thành cell khác
         private Renderer[] _renderers;
         private Coroutine _moveRoutine;
         private Pooler<Gun> _pool;
         private RoundedPolylineFollower _follower;
-        private Quaternion _canonRestLocalRot = Quaternion.identity; // pose gốc của model nòng
-        private float _aimYaw;                                       // góc lệch nòng so với thân gun
         private int _lastLap;             // vòng path đã chạy, mốc để mở khoá bắn
-        private bool _fireArmed = true;   // vòng này còn được bắn không (false = đang trên đường về pos 0)
-        private bool _hadTarget;          // vòng này đã bắt được target chưa
-        private float _noTargetTimer;     // mất target liên tục bao lâu rồi
 
-        /// <summary>Target còn sống và đúng màu — object pooled có thể đã thành cell khác (Generation).</summary>
-        private bool HasLiveTarget => _currentTarget != null && _currentTarget.Generation == _targetGen
-                                      && !_currentTarget.IsEmpty && _currentTarget.Color == Data.Color;
+        /// <summary>
+        /// Một bên nòng. Mỗi bên có target + nhịp bắn RIÊNG và quạt hướng ra sườn gun (±X local), nên
+        /// gun chạy dọc path là quét được cả 2 phía cùng lúc mà không phải quay mặt.
+        /// </summary>
+        private class Barrel
+        {
+            public float Sign;        // +1 = phải (+X local), −1 = trái (−X local)
+            public Transform Muzzle;
+            public BlockCell Target;
+            public int TargetGen;     // Generation lúc chốt — lệch = object pool đã thành cell khác
+            public float FireTimer;
+            public bool Armed;        // còn lượt bắn của vòng này không
+            public bool HadTarget;    // vòng này đã bắt được cell nào chưa
+            public float IdleTimer;   // quạt trống liên tục bao lâu rồi
+        }
 
-        /// <summary>Điểm xuất phát của đạn: muzzle → canon → gốc gun.</summary>
-        private Vector3 MuzzlePosition =>
-            muzzle != null ? muzzle.position : (canon != null ? canon.position : transform.position);
+        private readonly Barrel _right = new Barrel { Sign = 1f };
+        private readonly Barrel _left = new Barrel { Sign = -1f };
+
+        /// <summary>Target của nòng còn sống và đúng màu — object pooled có thể đã thành cell khác.</summary>
+        private bool HasLiveTarget(Barrel b) => b.Target != null && b.Target.Generation == b.TargetGen
+                                                && !b.Target.IsEmpty && b.Target.Color == Data.Color;
+
+        /// <summary>Góc toả tối đa của 1 nòng: quá 180° là đã kín nửa mặt phẳng của nó, không thêm được gì.</summary>
+        private float Spread => Mathf.Clamp(_fireAngle, 0f, 180f);
 
         public void OnInitializedInPool(Pooler<Gun> pool) => _pool = pool;
 
@@ -78,8 +84,8 @@ namespace Wayfu.Lamkn
             _follower = GetComponentInChildren<RoundedPolylineFollower>(true);
             if (_follower != null) _follower.enabled = false;
 
-            if (canon == null) canon = FindChildByName("canon");
-            if (canon != null) _canonRestLocalRot = canon.localRotation;
+            _right.Muzzle = muzzleRight;
+            _left.Muzzle = muzzleLeft;
 
             CollectRenderers();
 
@@ -106,14 +112,6 @@ namespace Wayfu.Lamkn
             _renderers = list.ToArray();
         }
 
-        private Transform FindChildByName(string keyword)
-        {
-            foreach (var t in GetComponentsInChildren<Transform>(true))
-                if (t != transform && t.name.IndexOf(keyword, System.StringComparison.OrdinalIgnoreCase) >= 0)
-                    return t;
-            return null;
-        }
-
         public void Init(GunData data, float fireInterval, float fireRange, float fireAngle, float bulletSpeed)
         {
             Data = new GunData { Color = data.Color, CountBullet = data.CountBullet };
@@ -123,8 +121,9 @@ namespace Wayfu.Lamkn
             _bulletSpeed = bulletSpeed;
 
             // Reset trạng thái (item pooled có thể tái dùng).
-            _fireTimer = 0f;
             _lastLap = 0;
+            ResetBarrel(_right);
+            ResetBarrel(_left);
             ArmForNewLap();
             if (_moveRoutine != null) { StopCoroutine(_moveRoutine); _moveRoutine = null; }
 
@@ -138,10 +137,6 @@ namespace Wayfu.Lamkn
             EnsureLabel();
             UpdateLabel();
             _state = GunState.InSlot;
-
-            // Item pooled tái dùng: trả nòng về pose gốc, không thì nó giữ góc ngắm của lượt trước.
-            _aimYaw = 0f;
-            if (canon != null) canon.localRotation = _canonRestLocalRot;
 
             // Item pooled tái dùng: tắt follower để gun đứng yên trong slot (bật lại khi deploy).
             if (_follower != null) _follower.enabled = false;
@@ -163,7 +158,8 @@ namespace Wayfu.Lamkn
             _state = GunState.Queued;
             Slot = null;
             transform.SetParent(null);
-            _fireTimer = 0f;
+            ResetBarrel(_right);
+            ResetBarrel(_left);
         }
 
         public void OnDeployed()
@@ -171,7 +167,8 @@ namespace Wayfu.Lamkn
             _state = GunState.OnPath;
             Slot = null;
             transform.SetParent(null);
-            _fireTimer = 0f;
+            ResetBarrel(_right);
+            ResetBarrel(_left);
             // Gun chờ trong queue được MoveTo tới chỗ đứng; coroutine đó vẫn ghi transform.position mỗi
             // frame → phải dừng, không thì nó giành position với follower.
             if (_moveRoutine != null) { StopCoroutine(_moveRoutine); _moveRoutine = null; }
@@ -190,106 +187,108 @@ namespace Wayfu.Lamkn
         {
             if (_state != GunState.OnPath) return;
 
-            // Mỗi vòng path gun chỉ được MỘT lượt bắn. Về tới pos 0 (xong 1 vòng) = mở khoá lượt mới.
+            // Mỗi vòng path, MỖI NÒNG chỉ được 1 lượt bắn. Về tới pos 0 (xong 1 vòng) = mở khoá lượt mới.
             int lap = _follower != null ? _follower.LapCount : 0;
             if (lap != _lastLap) { _lastLap = lap; ArmForNewLap(); }
 
-            // Đã bắn xong lượt của vòng này → im lặng trên cả quãng đường quay lại pos 0. Bỏ target luôn
-            // để nòng tự quay về hướng path (xem LateUpdate).
-            if (!_fireArmed) { _currentTarget = null; return; }
+            // Nòng phải chạy trước, rồi tới nòng trái — mỗi bên nhận target của bên kia làm danh sách
+            // loại trừ nên 2 nòng không bao giờ nhắm trùng 1 cell.
+            TickBarrel(_right, _left.Target);
+            if (_state != GunState.OnPath) return; // hết đạn giữa chừng → Die() đã despawn gun
+            TickBarrel(_left, _right.Target);
+        }
 
-            // Bám target tới khi cell bị phá hết, HOẶC tới khi cell rơi ra ngoài quạt — quạt trôi qua grid
-            // rồi thì buông grid đó, không bắn với theo nữa. Cell là item POOLED: object có thể bị tái dùng
-            // cho cell mới ngay trong cùng frame (nhả ở ô sâu) → check Generation, lệch = target cũ đã chết.
-            if (!HasLiveTarget || !InDetectZone(_currentTarget))
+        /// <summary>Chạy 1 bên nòng.</summary>
+        private void TickBarrel(Barrel b, BlockCell otherTarget)
+        {
+            // Hết lượt của vòng này → nòng im lặng suốt quãng quay lại pos 0, KHÔNG nhặt cell mới dọc đường.
+            if (!b.Armed) return;
+
+            // DỨT ĐIỂM TỪNG CELL: chỉ chọn cell khác khi cell đang bám đã bị phá HẾT. Quạt KHÔNG được
+            // dùng làm điều kiện đổi target — làm vậy là nòng bỏ dở cột này nhảy sang cột kia.
+            if (!HasLiveTarget(b))
             {
-                _currentTarget = GridBlockManager.Instance?.FindTargetCell(
-                    Data.Color, transform.position, transform.forward, _fireRange, _fireAngle);
-                _targetGen = _currentTarget != null ? _currentTarget.Generation : 0;
+                b.Target = GridBlockManager.Instance?.FindTargetCell(
+                    Data.Color, transform.position, transform.forward, b.Sign, _fireRange, _fireAngle, otherTarget);
+                b.TargetGen = b.Target != null ? b.Target.Generation : 0;
             }
 
-            if (_currentTarget != null) { _hadTarget = true; _noTargetTimer = 0f; }
-            else if (_hadTarget)
+            // Quạt là điều kiện BẮN: cell trôi ra ngoài quạt thì ngừng bắn, không đổi sang cell khác.
+            bool inZone = InDetectZone(b.Target, b);
+
+            if (inZone) { b.HadTarget = true; b.IdleTimer = 0f; }
+            else if (b.HadTarget)
             {
-                // Đã bắn được rồi mà giờ mất target → quạt đã trôi qua grid, hết lượt của vòng này.
-                // Chờ targetLostGrace mới khoá: cột đang dồn thì cell nào cũng PendingEntry, target hụt
-                // trong chốc lát là bình thường, khoá ngay là gun chết oan giữa cột.
-                _noTargetTimer += Time.deltaTime;
-                if (_noTargetTimer >= targetLostGrace) { _fireArmed = false; return; }
+                // Nòng này đã bắn được trong vòng rồi mà giờ quạt trống → nó đã đi qua grid của mình.
+                // HẾT LƯỢT: khoá tới hết vòng. Khoá theo TỪNG NÒNG chứ không theo cả gun — gộp chung thì
+                // chỉ cần 1 nòng còn thấy cell là gun không bao giờ khoá, và bắn suốt cả quãng quay lại.
+                // Chờ targetLostGrace mới khoá: cột đang dồn thì cell nào cũng PendingEntry, quạt trống
+                // trong chốc lát là bình thường, khoá ngay là nòng chết oan giữa cột.
+                b.IdleTimer += Time.deltaTime;
+                if (b.IdleTimer >= targetLostGrace) { b.Armed = false; return; }
             }
 
-            _fireTimer -= Time.deltaTime;
-            // Target luôn nằm trong quạt (vừa lọc ở trên) nên không cần gate lại ở đây. Chỉ bắn khi cell
-            // còn block CHƯA bị đạn đang bay đặt chỗ (tránh bắn dư).
-            if (_fireTimer <= 0f && _currentTarget != null && _currentTarget.Available > 0)
+            b.FireTimer -= Time.deltaTime;
+            // Chỉ bắn khi cell còn block CHƯA bị đạn đang bay đặt chỗ (tránh bắn dư).
+            if (inZone && b.FireTimer <= 0f && b.Target.Available > 0)
             {
-                Fire(_currentTarget);
-                _fireTimer = _fireInterval;
+                Fire(b);
+                b.FireTimer = _fireInterval;
             }
         }
 
-        /// <summary>Mở khoá bắn cho 1 vòng path mới (gun vừa về tới pos 0, hoặc vừa được deploy).</summary>
+        private static void ResetBarrel(Barrel b)
+        {
+            b.Target = null;
+            b.TargetGen = 0;
+            b.FireTimer = 0f;
+            b.Armed = true;
+            b.HadTarget = false;
+            b.IdleTimer = 0f;
+        }
+
+        /// <summary>
+        /// Mở khoá bắn cho 1 vòng path mới (gun vừa về tới pos 0, hoặc vừa được deploy). Bỏ luôn target
+        /// cũ: vòng mới chọn lại từ đầu. Luật "dứt điểm từng cell" áp trong PHẠM VI 1 vòng — giữ target
+        /// qua vòng thì nòng ôm mãi 1 cell nó không còn với tới, kẹt cứng không bao giờ bắn nữa.
+        /// </summary>
         private void ArmForNewLap()
         {
-            _fireArmed = true;
-            _hadTarget = false;
-            _noTargetTimer = 0f;
-            _currentTarget = null;
+            ResetBarrel(_right);
+            ResetBarrel(_left);
         }
 
         /// <summary>
-        /// Xoay nòng về target (không có target thì trả nòng về hướng path). Chạy ở LateUpdate vì
-        /// RoundedPolylineFollower set rotation của root trong Update — phải đợi nó xong mới tính đúng
-        /// góc lệch giữa thân gun và target, không thì nòng giật theo thứ tự Update.
+        /// Cell có nằm trong vùng bắn của nòng này không: bán kính _fireRange, quạt tính TỪ hướng trước
+        /// mặt của gun (thân bám path) rồi toả sang sườn của nòng đúng <see cref="Spread"/> độ. Đo trên
+        /// sàn XZ (bỏ qua chênh lệch Y).
+        /// Phải khớp đúng bộ lọc của <see cref="GridBlockManager.FindTargetCell"/>, không thì target vừa
+        /// chọn xong đã bị loại ngay frame sau và nòng đứng khựng chọn đi chọn lại.
         /// </summary>
-        private void LateUpdate()
-        {
-            if (canon == null || _state != GunState.OnPath) return;
-
-            float desiredYaw = 0f; // 0 = nòng trùng hướng thân gun = hướng path
-            if (HasLiveTarget)
-            {
-                Vector3 dir = _currentTarget.transform.position - canon.position;
-                dir.y = 0f; // chỉ xoay trên sàn XZ, không chúc nòng lên/xuống
-                if (dir.sqrMagnitude > 1e-6f)
-                    desiredYaw = Vector3.SignedAngle(transform.forward, dir, Vector3.up);
-            }
-
-            _aimYaw = canonTurnSpeed > 0f
-                ? Mathf.MoveTowardsAngle(_aimYaw, desiredYaw, canonTurnSpeed * Time.deltaTime)
-                : desiredYaw;
-
-            // Xoay quanh Y theo GÓC LỆCH rồi mới nhân pose gốc của model → không phụ thuộc model nòng
-            // quay mặt về trục local nào (canon fbx có offset riêng, machine thì lệch -90 quanh Z).
-            canon.rotation = Quaternion.AngleAxis(_aimYaw, Vector3.up) * transform.rotation * _canonRestLocalRot;
-        }
-
-        /// <summary>
-        /// Cell có nằm trong vùng PHÁT HIỆN không: quạt _fireAngle độ quanh hướng thân gun, bán kính
-        /// _fireRange, đo trên sàn XZ (bỏ qua chênh lệch Y). Phải khớp đúng bộ lọc của
-        /// <see cref="GridBlockManager.FindTargetCell"/>, không thì target vừa chọn xong đã bị loại ngay.
-        /// </summary>
-        private bool InDetectZone(BlockCell cell)
+        private bool InDetectZone(BlockCell cell, Barrel b)
         {
             if (cell == null) return false;
             Vector3 d = cell.transform.position - transform.position; d.y = 0f;
-            if (d.sqrMagnitude > _fireRange * _fireRange) return false;
-            if (_fireAngle >= 360f || d.sqrMagnitude < 1e-6f) return true;
-            return Vector3.Angle(transform.forward, d) <= _fireAngle * 0.5f;
+            float sqr = d.sqrMagnitude;
+            if (sqr > _fireRange * _fireRange) return false;
+            if (sqr < 1e-6f) return true;
+            if (Vector3.Dot(transform.right, d) * b.Sign < 0f) return false; // sai sườn
+            return Vector3.Dot(transform.forward, d) >= Mathf.Cos(Spread * Mathf.Deg2Rad) * Mathf.Sqrt(sqr);
         }
 
-        private void Fire(BlockCell cell)
+        private void Fire(Barrel b)
         {
             Data.CountBullet--;
             UpdateLabel();
 
-            cell.ReserveHit();
+            b.Target.ReserveHit();
             var bullet = PoolManager.Instance != null ? PoolManager.Instance.GetBullet() : null;
+            Vector3 from = b.Muzzle != null ? b.Muzzle.position : transform.position;
             if (bullet != null)
-                bullet.Launch(MuzzlePosition, cell, _bulletSpeed, Data.Color);
+                bullet.Launch(from, b.Target, _bulletSpeed, Data.Color);
             else
             {
-                cell.ApplyHit(); // fallback không có pool
+                b.Target.ApplyHit(); // fallback không có pool
                 GameController.Instance?.OnBoardChanged();
             }
 
@@ -346,29 +345,32 @@ namespace Wayfu.Lamkn
         }
 
 #if UNITY_EDITOR
-        // Quạt = vùng PHÁT HIỆN (bán kính _fireRange, mở _fireAngle độ quanh hướng thân gun): gun chỉ bắt
-        // VÀ chỉ bắn cell nằm trong đó. VÀNG = còn lượt bắn của vòng này; XÁM = đã bắn xong, đang trên
-        // đường quay về pos 0 (im lặng tới hết vòng). Đường xanh = đang bám target.
+        // HAI quạt bắn: mỗi nòng quét TỪ hướng trước mặt (thân gun bám path) toả sang sườn của nó Spread độ.
+        // VÀNG = còn lượt bắn của vòng này; XÁM = đã bắn xong, đang trên đường quay về pos 0.
+        // Đường tới target: XANH = trong quạt, đang bắn. ĐỎ = cell còn sống nhưng đã ra ngoài quạt —
+        // nòng vẫn GIỮ nó (dứt điểm từng cell) và chờ vào lại quạt để bắn tiếp.
         private void OnDrawGizmos()
         {
-            if (_state == GunState.Dead) return;
+            //if (_state == GunState.Dead) return;
 
-            Handles.color = _state == GunState.OnPath && !_fireArmed
-                ? new Color(0.5f, 0.5f, 0.5f, 0.5f)   // hết lượt: quạt xám
-                : new Color(1f, 0.85f, 0.2f, 0.9f);
-            if (_fireAngle >= 360f)
-                Handles.DrawWireDisc(transform.position, Vector3.up, _fireRange);
-            else
-            {
-                Vector3 from = Quaternion.AngleAxis(-_fireAngle * 0.5f, Vector3.up) * transform.forward;
-                Handles.DrawSolidArc(transform.position, Vector3.up, from, _fireAngle, _fireRange);
-            }
+            //Handles.color = _state == GunState.OnPath && !_fireArmed
+            //    ? new Color(0.5f, 0.5f, 0.5f, 0.5f)   // hết lượt: quạt xám
+            //    : new Color(1f, 0.85f, 0.2f, 0.9f);
 
-            if (_state == GunState.OnPath && _currentTarget != null)
-            {
-                Gizmos.color = InDetectZone(_currentTarget) ? UnityEngine.Color.green : UnityEngine.Color.red;
-                Gizmos.DrawLine(transform.position, _currentTarget.transform.position);
-            }
+            //// Góc âm = quét ngược chiều → nòng trái toả sang trái, nòng phải sang phải, chung mép ở forward.
+            //Handles.DrawSolidArc(transform.position, Vector3.up, transform.forward, Spread * _right.Sign, _fireRange);
+            //Handles.DrawSolidArc(transform.position, Vector3.up, transform.forward, Spread * _left.Sign, _fireRange);
+
+            //if (_state != GunState.OnPath) return;
+            //DrawTargetLine(_right);
+            //DrawTargetLine(_left);
+        }
+
+        private void DrawTargetLine(Barrel b)
+        {
+            if (b.Target == null) return;
+            Gizmos.color = InDetectZone(b.Target, b) ? UnityEngine.Color.green : UnityEngine.Color.red;
+            Gizmos.DrawLine(transform.position, b.Target.transform.position);
         }
 #endif
     }

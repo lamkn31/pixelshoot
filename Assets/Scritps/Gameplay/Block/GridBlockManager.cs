@@ -153,22 +153,29 @@ namespace Wayfu.Lamkn
         /// khi quạt đã trôi qua, hai bên lệch nhau thì target vừa chọn xong đã bị loại ngay frame sau.</para>
         /// </summary>
         /// <summary>
-        /// Cell cùng màu gần nhất ở hàng ngoài cùng còn bắn được, TRONG tầm phát hiện (bán kính detectRange)
-        /// VÀ trong góc quạt (fireAngle độ, đối xứng quanh forward). fireAngle >= 360 = quét tròn.
+        /// Cell cùng màu gần nhất ở hàng ngoài cùng còn bắn được, trong vùng bắn của MỘT nòng: bán kính
+        /// <paramref name="detectRange"/>, quạt tính TỪ hướng trước mặt <paramref name="forward"/> rồi toả
+        /// sang sườn của nòng đúng <paramref name="spreadAngle"/> độ.
+        /// <paramref name="side"/>: +1 = nòng phải, −1 = nòng trái.
+        /// <paramref name="exclude"/>: target của nòng bên kia — để 2 nòng không bắn trùng 1 cell.
         /// </summary>
-        public BlockCell FindTargetCell(TypeColor color, Vector3 from, Vector3 forward, float detectRange, float fireAngle)
+        public BlockCell FindTargetCell(TypeColor color, Vector3 from, Vector3 forward, float side,
+                                        float detectRange, float spreadAngle, BlockCell exclude = null)
         {
             BlockCell best = null;
             int bestRow = -1;
             float bestSqr = float.MaxValue;
             float detectSqr = detectRange * detectRange;
 
-            // Quạt tính trên sàn XZ. >=360 thì bỏ qua hẳn phép so góc (quét tròn); ngược lại chuẩn hoá
-            // forward 1 lần ở ngoài vòng lặp để so cosin, khỏi gọi Vector3.Angle (Acos) cho từng cell.
-            bool coneLimited = fireAngle < 360f;
+            // Quạt tính trên sàn XZ. Chuẩn hoá forward + dựng vector sườn 1 lần ở ngoài vòng lặp để so
+            // bằng dot/cosin, khỏi gọi Vector3.Angle (Acos) cho từng cell.
             forward.y = 0f;
-            if (coneLimited && forward.sqrMagnitude > 1e-6f) forward.Normalize(); else coneLimited = false;
-            float cosHalf = Mathf.Cos(fireAngle * 0.5f * Mathf.Deg2Rad);
+            bool hasDir = forward.sqrMagnitude > 1e-6f;
+            if (hasDir) forward.Normalize();
+            Vector3 sideVec = Vector3.Cross(Vector3.up, forward); // +X local của gun
+            float sideSign = side >= 0f ? 1f : -1f;
+            // Toả tối đa 180° là kín nửa mặt phẳng của nòng — quá số đó không còn ý nghĩa.
+            float cosSpread = Mathf.Cos(Mathf.Clamp(spreadAngle, 0f, 180f) * Mathf.Deg2Rad);
 
             foreach (var gr in _grids)
                 for (int r = 0; r < gr.Rows.Count; r++)
@@ -178,15 +185,20 @@ namespace Wayfu.Lamkn
                     {
                         var cell = row[e];
                         if (cell == null || cell.Color != color) continue;
+                        if (cell == exclude) continue;  // nòng bên kia đang bắn cell này → không bắn trùng
                         if (cell.PendingEntry) continue; // đang TRƯỢT (nhả mới / dồn hàng) → chưa cho ngắm
                         if (!IsShootable(gr, r, e)) continue;
                         Vector3 d = cell.transform.position - from; d.y = 0f;
                         float sqr = d.sqrMagnitude;
                         if (sqr > detectSqr) continue;
-                        // dot(forward, d̂) >= cos(nửa góc) ⇔ cell nằm trong quạt. sqr>eps để cell trùng
-                        // vị trí gun không chia cho 0 (luôn coi là trong quạt).
-                        if (coneLimited && sqr > 1e-6f
-                            && Vector3.Dot(forward, d) < cosHalf * Mathf.Sqrt(sqr)) continue;
+                        // Trong quạt của nòng ⇔ ĐÚNG SƯỜN (dot với vector sườn cùng dấu) VÀ lệch khỏi
+                        // hướng trước mặt không quá spreadAngle (dot(forward, d̂) >= cos spread).
+                        // sqr>eps để cell trùng vị trí gun không chia cho 0 (luôn coi là trong quạt).
+                        if (hasDir && sqr > 1e-6f)
+                        {
+                            if (Vector3.Dot(sideVec, d) * sideSign < 0f) continue;
+                            if (Vector3.Dot(forward, d) < cosSpread * Mathf.Sqrt(sqr)) continue;
+                        }
                         if (r > bestRow || (r == bestRow && sqr < bestSqr))
                         { bestRow = r; bestSqr = sqr; best = cell; }
                     }
