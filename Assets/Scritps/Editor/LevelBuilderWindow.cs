@@ -52,6 +52,7 @@ namespace Wayfu.Lamkn
         private int _dragGrid = -1, _dragHandle = -1; // handle: 0=Center, 1=Left tip, 2=Right tip
         private int _dragCellGrid = -1, _dragCellIndex = -1; // xoay hướng 1 cell
         private Vector3 _dragCellCenter;
+        private int _dragSplineGrid = -1, _dragSplineWp = -1; // kéo waypoint của Spline grid
 
         // Generate grid.
         private TypeColor _genColor = TypeColor.Red;
@@ -616,7 +617,8 @@ namespace Wayfu.Lamkn
                     if (grid == null) continue;
                     int last = Mathf.Max(0, grid.Rows - 1);
 
-                    // Viền: Rect = 4 cạnh; Arc = 2 cạnh bên.
+                    // Viền: Rect = 4 cạnh; Arc = 2 cạnh bên. Spline bỏ qua — dải uốn lượn không có "cạnh"
+                    // nối thẳng được, vẽ vào chỉ thành đường chém ngang qua grid; đã có đường tím thay thế.
                     Handles.color = new Color(0.7f, 0.7f, 0.7f);
                     if (grid.Shape == BlockGridShape.Rect)
                     {
@@ -624,7 +626,7 @@ namespace Wayfu.Lamkn
                         Vector3 p2 = grid.CellPos(last, grid.ElementsInRow(last) - 1), p3 = grid.CellPos(last, 0);
                         Line(Proj(p0), Proj(p1)); Line(Proj(p1), Proj(p2)); Line(Proj(p2), Proj(p3)); Line(Proj(p3), Proj(p0));
                     }
-                    else
+                    else if (grid.Shape == BlockGridShape.Arc)
                     {
                         Line(Proj(grid.CellPos(0, 0)), Proj(grid.CellPos(last, grid.ElementsInRow(last) - 1)));
                         Line(Proj(grid.CellPos(0, grid.ElementsInRow(0) - 1)), Proj(grid.CellPos(last, 0)));
@@ -656,13 +658,13 @@ namespace Wayfu.Lamkn
 
                             // Hướng (rotate) của cell: mũi tên; kéo đầu mũi tên để xoay.
                             // Spawner: mũi tên CAM + dài hơn = hướng nhả cell ra, phân biệt ngay với cell thường.
-                            // Rect: mọi cell chung 1 hướng của grid → không cho kéo xoay từng cell, và vẽ
-                            // theo hướng TÍNH TỪ GRID (không đọc data) để xoay grid là mũi tên theo ngay,
-                            // khỏi phải bấm Generate Cells lại.
+                            // Rect/Spline: hướng do hình dạng grid quyết định → vẽ theo hướng TÍNH TỪ GRID
+                            // (không đọc data) để xoay grid / uốn đường là mũi tên theo ngay, khỏi phải
+                            // Generate Cells lại; và không cho kéo xoay từng cell. Arc thì đọc data.
                             if (_showDir)
                             {
-                                bool isRectGrid = grid.Shape == BlockGridShape.Rect;
-                                Vector3 dirV = isRectGrid
+                                bool autoDir = grid.CellAngleFromShape;
+                                Vector3 dirV = autoDir
                                     ? Quaternion.Euler(0f, grid.DefaultCellAngle(r, e), 0f) * Vector3.forward
                                     : cell.DirectionVector;
                                 Vector3 tipW = wp + dirV * (isSpawner ? 0.95f : 0.55f);
@@ -671,7 +673,7 @@ namespace Wayfu.Lamkn
                                     Vector2 tip = Proj(tipW);
                                     Handles.color = isSpawner ? SpawnerCol : new Color(1f, 1f, 1f, 0.9f);
                                     Line(bp, tip); ArrowHead(bp, tip);
-                                    if (!isRectGrid) CellRotateHandle(gi, grid.CellIndex(r, e), wp, tip, area);
+                                    if (!autoDir) CellRotateHandle(gi, grid.CellIndex(r, e), wp, tip, area);
                                 }
                             }
                         }
@@ -696,10 +698,17 @@ namespace Wayfu.Lamkn
                             }
                         }
 
+                    // Spline: hình dạng do waypoint quyết định → vẽ đường + handle waypoint, và BỎ 2 handle
+                    // đầu cạnh (chúng chỉnh BaseRadius/ArcAngle, vô nghĩa ở đây).
+                    if (grid.Shape == BlockGridShape.Spline) DrawSplineHandles(gi, grid, area, Proj, Line);
+
                     // Handle: tâm + 2 đầu cạnh + xoay (kéo được).
                     GridHandle(gi, 0, Proj(grid.Center), area);
-                    GridHandle(gi, 1, Proj(grid.CellPos(0, 0)), area);                               // trái
-                    GridHandle(gi, 2, Proj(grid.CellPos(0, grid.ElementsInRow(0) - 1)), area);         // phải
+                    if (grid.Shape != BlockGridShape.Spline)
+                    {
+                        GridHandle(gi, 1, Proj(grid.CellPos(0, 0)), area);                             // trái
+                        GridHandle(gi, 2, Proj(grid.CellPos(0, grid.ElementsInRow(0) - 1)), area);     // phải
+                    }
 
                     // Handle xoay: nằm trên hướng "sâu dần" của grid, ra ngoài hàng cuối 1 bậc.
                     Vector3 rotW = grid.Center + grid.Forward *
@@ -713,6 +722,7 @@ namespace Wayfu.Lamkn
 
                 }
                 ApplyGridHandleDrag();
+                ApplySplineDrag();
                 if (_showDir) ApplyCellRotateDrag();
                 // Tô màu chạy SAU toàn bộ handle (handle đã e.Use() thì tới đây không còn MouseDown nữa)
                 // và sau cả vòng vẽ, vì brush cần _hitCells/_hitQueue của MỌI grid đã gom đủ.
@@ -973,7 +983,8 @@ namespace Wayfu.Lamkn
                     {
                         g.FindPropertyRelative("BaseRadius").floatValue = Mathf.Max(0.1f, v.magnitude);
                         float angle = Mathf.Atan2(v.x, v.z) * Mathf.Rad2Deg;
-                        g.FindPropertyRelative("ArcAngle").floatValue = Mathf.Clamp(Mathf.Abs(angle) * 2f, 1f, 350f);
+                        // Trần 360 (không phải 350): 360 = VÒNG KÍN, kéo tới đó mới ra được level kiểu ring.
+                        g.FindPropertyRelative("ArcAngle").floatValue = Mathf.Clamp(Mathf.Abs(angle) * 2f, 1f, 360f);
                     }
                 }
                 e.Use(); Repaint();
@@ -1146,6 +1157,67 @@ namespace Wayfu.Lamkn
                 e.Use(); Repaint();
             }
             else if (e.type == EventType.MouseUp) { _dragCellGrid = -1; _dragCellIndex = -1; e.Use(); }
+        }
+
+        /// <summary>
+        /// Vẽ đường spline + handle waypoint của 1 Spline grid. Waypoint lưu ở LOCAL nên phải qua
+        /// Center+Rotation mới ra world; lúc kéo thì làm ngược lại.
+        /// </summary>
+        private void DrawSplineHandles(int gi, BlockGridData g, Rect area,
+                                       System.Func<Vector3, Vector2> Proj, System.Action<Vector2, Vector2> Line)
+        {
+            if (g.SplineWaypoints == null || g.SplineWaypoints.Count == 0) return;
+
+            var rot = Quaternion.Euler(0f, g.Rotation, 0f);
+            Vector3 ToW(Vector3 local) => g.Center + rot * local;
+
+            // Đường tim (chưa lệch ra hàng nào) — cho thấy grid đang bám cái gì.
+            var s = RoundedPolylinePath.BuildSamples(g.SplineWaypoints, g.SplineClosed,
+                                                     g.SplineCornerRadius, 8, g.SplineStyle);
+            if (s != null && s.Length >= 2)
+            {
+                Handles.color = new Color(0.8f, 0.4f, 1f, 0.7f);
+                for (int i = 1; i < s.Length; i++) Line(Proj(ToW(s[i - 1])), Proj(ToW(s[i])));
+            }
+
+            var e = Event.current;
+            for (int i = 0; i < g.SplineWaypoints.Count; i++)
+            {
+                Vector2 p = Proj(ToW(g.SplineWaypoints[i]));
+                if (!area.Contains(p)) continue;
+                var hr = new Rect(p.x - 6f, p.y - 6f, 12f, 12f);
+                bool active = _dragSplineGrid == gi && _dragSplineWp == i;
+                EditorGUI.DrawRect(hr, active ? Color.yellow : new Color(0.8f, 0.4f, 1f, 0.95f));
+                EditorGUIUtility.AddCursorRect(hr, MouseCursor.MoveArrow);
+                if (e.type == EventType.MouseDown && e.button == 0 && !e.alt && hr.Contains(e.mousePosition))
+                { _dragSplineGrid = gi; _dragSplineWp = i; e.Use(); }
+            }
+        }
+
+        private void ApplySplineDrag()
+        {
+            if (_dragSplineGrid < 0 || _so == null) return;
+            var grids = _so.FindProperty("Grids");
+            if (_dragSplineGrid >= grids.arraySize) { _dragSplineGrid = -1; return; }
+
+            var e = Event.current;
+            if (e.type == EventType.MouseDrag)
+            {
+                var g = grids.GetArrayElementAtIndex(_dragSplineGrid);
+                var wp = g.FindPropertyRelative("SplineWaypoints");
+                if (_dragSplineWp < 0 || _dragSplineWp >= wp.arraySize) { _dragSplineGrid = -1; return; }
+
+                // Chuột cho ra toạ độ WORLD → quy ngược về LOCAL của grid để lưu.
+                Vector3 world = InverseV(e.mousePosition);
+                Vector3 center = g.FindPropertyRelative("Center").vector3Value;
+                float rotY = g.FindPropertyRelative("Rotation").floatValue;
+                Vector3 local = Quaternion.Euler(0f, -rotY, 0f) * (world - center);
+
+                var prop = wp.GetArrayElementAtIndex(_dragSplineWp);
+                prop.vector3Value = new Vector3(local.x, prop.vector3Value.y, local.z);
+                e.Use(); Repaint();
+            }
+            else if (e.type == EventType.MouseUp) { _dragSplineGrid = -1; _dragSplineWp = -1; e.Use(); }
         }
 
         private void HandleWaypointDrag(System.Func<Vector3, Vector2> V, Rect area)
@@ -1580,21 +1652,26 @@ namespace Wayfu.Lamkn
 
                 var shapeProp = grid.FindPropertyRelative("Shape");
                 bool isRect = shapeProp.enumValueIndex == (int)BlockGridShape.Rect;
+                bool isSpline = shapeProp.enumValueIndex == (int)BlockGridShape.Spline;
                 EditorGUILayout.PropertyField(shapeProp, new GUIContent("Shape"));
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("Center"));
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("Rotation"),
                     new GUIContent("Rotation (Y°)", "Xoay cả grid quanh trục Y. Kéo handle XANH LÁ trong khung giữa."));
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("BaseRadius"),
-                    new GUIContent(isRect ? "Dist Row 0" : "Base Radius"));
+                    new GUIContent(isRect ? "Dist Row 0" : isSpline ? "Lệch Row 0" : "Base Radius",
+                        isSpline ? "Khoảng cách từ đường spline tới hàng 0, theo pháp tuyến." : null));
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("RowSpacing"), new GUIContent("Row Spacing"));
                 EditorGUILayout.EndHorizontal();
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("Rows"), new GUIContent("Rows"));
+                // ArcAngle / Columns / SpiralGrowth vô nghĩa với Spline — hình dạng do waypoint quyết định.
                 if (isRect) EditorGUILayout.PropertyField(grid.FindPropertyRelative("Columns"), new GUIContent("Columns"));
-                else EditorGUILayout.PropertyField(grid.FindPropertyRelative("ArcAngle"), new GUIContent("Arc Angle"));
+                else if (!isSpline) EditorGUILayout.PropertyField(grid.FindPropertyRelative("ArcAngle"), new GUIContent("Arc Angle"));
                 EditorGUILayout.EndHorizontal();
-                if (!isRect) EditorGUILayout.PropertyField(grid.FindPropertyRelative("SpiralGrowth"), new GUIContent("Spiral Growth (xoắn)"));
+                if (!isRect && !isSpline)
+                    EditorGUILayout.PropertyField(grid.FindPropertyRelative("SpiralGrowth"), new GUIContent("Spiral Growth (xoắn)"));
+                if (isSpline) DrawSplineSection(grid, i);
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("BlockWidth"), new GUIContent("Block W"));
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("Spacing"), new GUIContent("Spacing"));
@@ -1619,6 +1696,45 @@ namespace Wayfu.Lamkn
         #endregion
 
         #region Grid ops
+
+        // Đường uốn lượn mà Spline grid bám theo. Waypoint là toạ độ LOCAL so với Center + Rotation.
+        private void DrawSplineSection(SerializedProperty grid, int gridIndex)
+        {
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.LabelField("SPLINE — đường grid bám theo", EditorStyles.miniBoldLabel);
+
+            var styleProp = grid.FindPropertyRelative("SplineStyle");
+            EditorGUILayout.PropertyField(grid.FindPropertyRelative("SplineClosed"), new GUIContent("Khép kín"));
+            EditorGUILayout.PropertyField(styleProp, new GUIContent("Style"));
+            using (new EditorGUI.DisabledScope(styleProp.enumValueIndex != (int)PathStyle.RoundedCorner))
+                EditorGUILayout.PropertyField(grid.FindPropertyRelative("SplineCornerRadius"),
+                    new GUIContent("Corner Radius"));
+
+            var wp = grid.FindPropertyRelative("SplineWaypoints");
+            EditorGUILayout.LabelField($"Waypoints — {wp.arraySize}", EditorStyles.miniLabel);
+            EditorGUILayout.HelpBox("Kéo ô VUÔNG TÍM trong khung giữa để chỉnh đường. Cần ít nhất 2 waypoint "
+                + "thì grid mới hiện.", MessageType.None);
+
+            int pend = -1; ListOp op = ListOp.None;
+            for (int i = 0; i < wp.arraySize; i++)
+            {
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.PropertyField(wp.GetArrayElementAtIndex(i), new GUIContent("WP " + i));
+                var o = MiniButtons(i, wp.arraySize);
+                if (o != ListOp.None) { pend = i; op = o; }
+                EditorGUILayout.EndHorizontal();
+            }
+            if (GUILayout.Button("+ Waypoint"))
+            {
+                int idx = AddArray(wp);
+                // Nối tiếp waypoint trước cho khỏi đè lên nhau; rỗng thì bắt đầu tại gốc local.
+                wp.GetArrayElementAtIndex(idx).vector3Value = idx > 0
+                    ? wp.GetArrayElementAtIndex(idx - 1).vector3Value + Vector3.right * 2f
+                    : Vector3.zero;
+            }
+            if (pend >= 0) ApplyOp(wp, pend, op);
+            EditorGUILayout.EndVertical();
+        }
 
         private void AddGrid(SerializedProperty grids)
         {
@@ -1753,6 +1869,14 @@ namespace Wayfu.Lamkn
                 sb.Append(g.Layout == BlockGridLayout.Uniform
                     ? "\nArc/Uniform: mọi hàng bằng nhau → cột THẲNG, cell sau bị đúng 1 cell trước chặn."
                     : "\nArc/ArcLength: hàng ra xa nhiều cell hơn → cột LỆCH, cell giữa bị 2 cell trước chặn.");
+
+            if (g.IsFullRing)
+                sb.Append("\n★ VÒNG KÍN (ArcAngle 360): mỗi hàng là 1 vòng tròn quanh Center, Rows = số vòng "
+                        + "lồng nhau. Nên để Layout = Uniform — ArcLength cho mỗi vòng số cell khác nhau, "
+                        + "map dồn hàng không vòng qua được mối nối.");
+            else if (g.Shape == BlockGridShape.Arc && g.SpiralGrowth > 0f)
+                sb.Append("\n★ XOẮN ỐC (SpiralGrowth > 0): bán kính lớn dần dọc theo sweep. Để ArcAngle > 360 "
+                        + "là cuộn nhiều vòng.");
             return sb.ToString();
         }
 

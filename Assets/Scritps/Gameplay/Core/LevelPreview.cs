@@ -80,9 +80,10 @@ namespace Wayfu.Lamkn
                             int stack = Mathf.Max(1, cell.BlockStackCt);
                             for (int j = 0; j < stack; j++)
                                 Gizmos.DrawWireCube(pos + Vector3.up * stackSpacing * j, Vector3.one * 0.45f);
-                            // Hướng (rotate) của cell. Rect: mọi cell chung 1 hướng, tính thẳng từ grid.
+                            // Hướng (rotate) của cell. Rect/Spline: do hình dạng grid quyết định → tính
+                            // thẳng từ grid. Arc: đọc góc riêng đã lưu trong data.
                             Gizmos.color = Color.white;
-                            Vector3 dirV = grid.Shape == BlockGridShape.Rect
+                            Vector3 dirV = grid.CellAngleFromShape
                                 ? Quaternion.Euler(0f, grid.DefaultCellAngle(r, e), 0f) * Vector3.forward
                                 : cell.DirectionVector;
                             Gizmos.DrawLine(pos, pos + dirV * 0.55f);

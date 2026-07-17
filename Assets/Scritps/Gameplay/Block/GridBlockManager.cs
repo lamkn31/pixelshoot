@@ -130,8 +130,10 @@ namespace Wayfu.Lamkn
         /// mỗi cell 1 góc, và người dùng kéo mũi tên chỉnh tay được.
         /// </summary>
         private static float CellAngle(GridRuntime gr, BlockCellData data) =>
-            gr.Data.Shape == BlockGridShape.Rect
-                ? gr.Data.DefaultCellAngle(0, 0)   // Rect: không phụ thuộc row/e
+            gr.Data.CellAngleFromShape
+                // Rect không phụ thuộc row/e, nhưng Spline thì MỖI cell 1 pháp tuyến → phải truyền đúng
+                // ô của nó (SpawnerDepth = row, BlockCol = index trong hàng).
+                ? gr.Data.DefaultCellAngle(data.SpawnerDepth, data.BlockCol)
                 : data.SpawnerDirectionAngleZ;
 
         public void Clear()
@@ -291,8 +293,8 @@ namespace Wayfu.Lamkn
                 var row = gr.Rows[src.Row];
                 if (src.Col >= row.Length || row[src.Col] == null) continue;
 
-                float ang = gr.Data.Shape == BlockGridShape.Rect
-                    ? gr.Data.DefaultCellAngle(0, 0) : src.DirAngle;
+                float ang = gr.Data.CellAngleFromShape
+                    ? gr.Data.DefaultCellAngle(src.Row, src.Col) : src.DirAngle;
                 row[src.Col].ShowSpawnerIndicator(true, ang);
                 any = true;
             }

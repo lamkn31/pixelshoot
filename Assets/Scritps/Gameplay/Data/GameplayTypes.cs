@@ -99,8 +99,11 @@ namespace Wayfu.Lamkn
     /// <para><b>Arc</b>: vòng cung (fan) quanh Center — hàng = cung bán kính BaseRadius + row*RowSpacing.</para>
     /// <para><b>Rect</b>: lưới CHỮ NHẬT thông thường — hàng thẳng dọc trục X, sâu dần theo +Z;
     /// mọi hàng có đúng <see cref="BlockGridData.Columns"/> cell nên cột luôn thẳng (chặn 1:1).</para>
+    /// <para><b>Spline</b>: grid UỐN LƯỢN bám theo 1 đường tự vẽ (SplineWaypoints) — hàng 0 chạy dọc
+    /// đường đó, hàng sau lệch dần theo PHÁP TUYẾN. Dùng cho level dạng dải băng ngoằn ngoèo mà Arc
+    /// (chỉ cong quanh 1 tâm) và Rect (chỉ thẳng) không tả được.</para>
     /// </summary>
-    public enum BlockGridShape { Arc, Rect }
+    public enum BlockGridShape { Arc, Rect, Spline }
 
     /// <summary>
     /// 1 grid xếp block trên sàn XZ. Row 0 = ngoài cùng, gần path (gun ăn từ row 0 vào trong).
@@ -141,6 +144,17 @@ namespace Wayfu.Lamkn
         public float StackSpacing = 0f;
         [Tooltip("ArcLength = hàng ra xa nhiều cell hơn (cột lệch). Uniform = mọi hàng bằng nhau (cột thẳng).")]
         public BlockGridLayout Layout = BlockGridLayout.ArcLength;
+
+        [Header("Spline (chỉ dùng khi Shape = Spline)")]
+        [Tooltip("Waypoint của đường uốn lượn, toạ độ LOCAL so với Center + Rotation — dời/xoay grid là " +
+                 "cả dải đi theo. Hàng 0 nằm cách đường này BaseRadius, hàng sau lệch thêm RowSpacing.")]
+        public List<Vector3> SplineWaypoints = new List<Vector3>();
+        [Tooltip("Khép kín đường uốn lượn thành vòng.")]
+        public bool SplineClosed;
+        [Tooltip("RoundedCorner = nối thẳng + bo góc. Bezier = cong mượt toàn phần.")]
+        public PathStyle SplineStyle = PathStyle.RoundedCorner;
+        [Tooltip("Bán kính bo góc — chỉ dùng khi SplineStyle = RoundedCorner.")]
+        public float SplineCornerRadius = 1f;
         [Tooltip("Cell theo thứ tự (row, element). Chỉ dùng Color + BlockStackCt.")]
         public List<BlockCellData> Cells = new List<BlockCellData>();
 
@@ -164,6 +178,24 @@ namespace Wayfu.Lamkn
         public Vector3 Forward => Quaternion.Euler(0f, Rotation, 0f) * Vector3.forward;
 
         /// <summary>
+        /// Cung đã khép kín thành VÒNG TRÒN: mỗi hàng là 1 vòng đồng tâm quanh Center, nhiều Rows =
+        /// nhiều vòng lồng nhau (dùng cho level kiểu ring/bo tròn).
+        /// <para>Xoắn ốc (SpiralGrowth &gt; 0) KHÔNG tính là vòng kín: đầu và cuối nằm ở 2 bán kính khác
+        /// nhau nên không chạm nhau, vẫn phải trải đều như cung hở.</para>
+        /// </summary>
+        public bool IsFullRing => (Shape == BlockGridShape.Arc && ArcAngle >= 360f && SpiralGrowth <= 0f)
+                               || (Shape == BlockGridShape.Spline && SplineClosed);
+
+        /// <summary>
+        /// Hướng cell do HÌNH DẠNG GRID quyết định (Rect: ngược Forward; Spline: pháp tuyến của đường)
+        /// → tính thẳng từ grid, KHÔNG đọc SpawnerDirectionAngleZ trong data. Nhờ vậy xoay grid / uốn
+        /// lại đường là hướng khớp ngay, data cũ chưa Generate lại cũng không lệch.
+        /// <para>Arc thì ngược lại: mỗi cell 1 góc riêng và người dùng kéo mũi tên chỉnh tay được → phải
+        /// tôn trọng giá trị trong data.</para>
+        /// </summary>
+        public bool CellAngleFromShape => Shape != BlockGridShape.Arc;
+
+        /// <summary>
         /// Hướng dồn/nhả MẶC ĐỊNH của cell (độ quanh Y) — tiến về phía path, tức chiều cell trượt khi
         /// dồn hàng và chiều spawner đẩy cell ra. Nguồn DUY NHẤT cho mọi nơi tính hướng cell.
         /// <para><b>Rect</b>: lưới thẳng nên MỌI cell chung 1 hướng = ngược <see cref="Forward"/>
@@ -172,9 +204,38 @@ namespace Wayfu.Lamkn
         /// </summary>
         public float DefaultCellAngle(int row, int e)
         {
-            Vector3 v = Shape == BlockGridShape.Rect ? -Forward : Center - CellPos(row, e);
+            Vector3 v;
+            if (Shape == BlockGridShape.Rect) v = -Forward;
+            else if (Shape == BlockGridShape.Spline) v = SplineInward(row, e);
+            else v = Center - CellPos(row, e); // Arc: hướng về tâm vốn đã vuông góc với cung
             v.y = 0f;
             return v.sqrMagnitude > 1e-6f ? Mathf.Repeat(Mathf.Atan2(v.x, v.z) * Mathf.Rad2Deg, 360f) : 0f;
+        }
+
+        /// <summary>
+        /// Hướng cell của Spline grid: VUÔNG GÓC với đường spline và chỉ VỀ PHÍA đường đó (các hàng lệch
+        /// ra theo +pháp tuyến nên hướng vào là −pháp tuyến). Cũng đúng chiều cell trượt khi dồn hàng.
+        /// <para>Tiếp tuyến lấy từ 2 điểm sát nhau TRÊN CHÍNH HÀNG NÀY. Không lấy hiệu 2 hàng
+        /// (CellPosAt(row) − CellPosAt(row+1)): mỗi hàng một chiều dài khác nhau nên cell cùng index ở 2
+        /// hàng KHÔNG nằm trên cùng pháp tuyến, vào khúc cong là hướng xiên đi.</para>
+        /// </summary>
+        private Vector3 SplineInward(int row, int e)
+        {
+            int count = ElementsInRow(row);
+            float total = RowLength(row);
+            if (total < 1e-4f) return Vector3.forward;
+
+            float target = count <= 1 ? total * 0.5f
+                         : IsFullRing ? e * (total / count)
+                                      : e * (total / (count - 1));
+
+            float d = Mathf.Max(0.01f, total * 0.01f);
+            Vector3 a = PosByLength(row, Mathf.Max(0f, target - d), total);
+            Vector3 b = PosByLength(row, Mathf.Min(total, target + d), total);
+            Vector3 tan = b - a; tan.y = 0f;
+            if (tan.sqrMagnitude < 1e-8f) return Vector3.forward;
+
+            return -Vector3.Cross(Vector3.up, tan.normalized);
         }
 
         /// <summary>Offset local (chưa xoay) → toạ độ world: xoay quanh Y rồi dời về Center.</summary>
@@ -183,9 +244,89 @@ namespace Wayfu.Lamkn
         // Vị trí tâm-hàng theo s (0..1) dọc sweep — có xoắn ốc.
         private Vector3 PosAlong(int row, float s)
         {
+            if (Shape == BlockGridShape.Spline) return SplinePosAlong(row, s);
             float angleRad = Mathf.Lerp(-ArcAngle * 0.5f, ArcAngle * 0.5f, s) * Mathf.Deg2Rad;
             float radius = BaseRadius + row * RowSpacing + s * SpiralGrowth;
             return ToWorld(new Vector3(Mathf.Sin(angleRad) * radius, 0f, Mathf.Cos(angleRad) * radius));
+        }
+
+        // Đường uốn lượn đã dựng (world) + arc-length cộng dồn. NonSerialized: chỉ là cache tính lại được.
+        [NonSerialized] private Vector3[] _splinePts;
+        [NonSerialized] private float[] _splineArc;
+        [NonSerialized] private int _splineKey;
+        [NonSerialized] private bool _splineBuilt;
+
+        /// <summary>
+        /// Dựng đường uốn lượn từ SplineWaypoints — dùng ĐÚNG bộ dựng của path
+        /// (<see cref="RoundedPolylinePath.BuildSamples"/>) nên Spline grid và path cong y hệt nhau,
+        /// và tự có luôn cả 2 kiểu RoundedCorner / Bezier.
+        /// <para>Phải cache: PosAlong bị gọi 48 lần cho MỖI RowLength, mà RowLength lại nằm trong
+        /// ElementsInRow → CellIndex → vòng lặp theo row. Dựng lại mỗi lần thì editor tụt frame ngay.</para>
+        /// </summary>
+        private void EnsureSpline()
+        {
+            int key = SplineKey();
+            if (_splineBuilt && key == _splineKey) return;
+            _splineKey = key;
+            _splineBuilt = true;
+            _splinePts = null;
+            _splineArc = null;
+
+            // Dựng ở LOCAL rồi mới ToWorld: ToWorld là phép dời+xoay cứng nên 2 thứ tự cho kết quả như nhau.
+            var local = RoundedPolylinePath.BuildSamples(SplineWaypoints, SplineClosed, SplineCornerRadius,
+                                                        8, SplineStyle);
+            if (local == null || local.Length < 2) return;
+
+            _splinePts = new Vector3[local.Length];
+            _splineArc = new float[local.Length];
+            for (int i = 0; i < local.Length; i++) _splinePts[i] = ToWorld(local[i]);
+            for (int i = 1; i < local.Length; i++)
+                _splineArc[i] = _splineArc[i - 1] + Vector3.Distance(_splinePts[i - 1], _splinePts[i]);
+        }
+
+        // Đổi mọi thứ ảnh hưởng hình dạng đường thành 1 số — lệch là dựng lại.
+        private int SplineKey()
+        {
+            unchecked
+            {
+                int h = 17;
+                h = h * 31 + (SplineWaypoints != null ? SplineWaypoints.Count : 0);
+                if (SplineWaypoints != null)
+                    foreach (var w in SplineWaypoints) h = h * 31 + w.GetHashCode();
+                h = h * 31 + SplineClosed.GetHashCode();
+                h = h * 31 + SplineCornerRadius.GetHashCode();
+                h = h * 31 + (int)SplineStyle;
+                h = h * 31 + Center.GetHashCode();
+                h = h * 31 + Rotation.GetHashCode();
+                return h;
+            }
+        }
+
+        /// <summary>Điểm trên hàng 'row' tại s (0..1) dọc đường: bám đường rồi lệch ra theo PHÁP TUYẾN.</summary>
+        private Vector3 SplinePosAlong(int row, float s)
+        {
+            EnsureSpline();
+            if (_splinePts == null) return Center;
+
+            float total = _splineArc[_splineArc.Length - 1];
+            float target = Mathf.Clamp01(s) * total;
+
+            // Tìm nhị phân đoạn chứa target — quét tuyến tính ở đây là O(n) nhân với 48 lần gọi mỗi RowLength.
+            int lo = 0, hi = _splineArc.Length - 1;
+            while (lo < hi - 1)
+            {
+                int mid = (lo + hi) >> 1;
+                if (_splineArc[mid] <= target) lo = mid; else hi = mid;
+            }
+
+            float d0 = _splineArc[lo], d1 = _splineArc[hi];
+            float t = d1 - d0 > 1e-5f ? (target - d0) / (d1 - d0) : 0f;
+            Vector3 p = Vector3.Lerp(_splinePts[lo], _splinePts[hi], t);
+
+            Vector3 tan = _splinePts[hi] - _splinePts[lo]; tan.y = 0f;
+            if (tan.sqrMagnitude < 1e-8f) return p;
+            Vector3 normal = Vector3.Cross(Vector3.up, tan.normalized);
+            return p + normal * (BaseRadius + row * RowSpacing);
         }
 
         private float RowLength(int row)
@@ -270,7 +411,12 @@ namespace Wayfu.Lamkn
                 return ToWorld(new Vector3(lateral, 0f, BaseRadius + row * RowSpacing));
             }
             float total = RowLength(row);
-            float target = count > 1 ? e * (total / (count - 1)) : total * 0.5f;
+            // Vòng KÍN: chia total cho count, KHÔNG phải count-1. Chia count-1 thì cell cuối rơi đúng
+            // lên cell đầu (góc −180 và +180 là cùng 1 điểm) → 2 cell chồng nhau ở mối nối, và hụt mất
+            // 1 khe. Cung HỞ thì ngược lại: cell đầu/cuối phải nằm đúng 2 đầu mút nên chia count-1.
+            float target = count <= 1 ? total * 0.5f
+                         : IsFullRing ? e * (total / count)
+                                      : e * (total / (count - 1));
             return PosByLength(row, target, total);
         }
 
