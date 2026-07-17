@@ -64,6 +64,8 @@ namespace Wayfu.Lamkn
             public bool Armed;        // còn lượt bắn của vòng này không
             public bool HadTarget;    // vòng này đã bắt được cell nào chưa
             public float IdleTimer;   // quạt trống liên tục bao lâu rồi
+            public bool FiredAtTarget; // đã nổ ÍT NHẤT 1 phát vào target hiện tại chưa — phân biệt cell
+                                       // "bắn dở" (phải bắn hết) với cell mới chỉ CHỐT (qua vòng là bỏ)
         }
 
         private readonly Barrel _right = new Barrel { Sign = 1f };
@@ -204,47 +206,53 @@ namespace Wayfu.Lamkn
         /// <summary>Chạy 1 bên nòng.</summary>
         private void TickBarrel(Barrel b, Barrel other)
         {
-            // Hết lượt của vòng này → nòng im lặng suốt quãng quay lại pos 0, KHÔNG nhặt cell mới dọc đường.
-            if (!b.Armed) return;
-
-            // Quạt CHỈ lọc lúc CHỌN target (bộ lọc nằm trong FindTargetCell). Đã chốt được cell thì bắn
-            // DỨT ĐIỂM hết stack, kể cả khi gun đã trôi qua và cell ra ngoài quạt — nên dưới đây không
-            // gate phát bắn theo quạt nữa. Chỉ chọn cell khác khi cell đang bám đã bị phá HẾT.
-            bool sawCell = true;
+            // Chỉ được CHỌN target mới khi cell đang bám đã bị phá HẾT (dứt điểm từng cell) VÀ nòng còn
+            // lượt của vòng này. Hết lượt (!Armed) thì KHÔNG nhặt cell mới — nhưng cell đang bắn DỞ vẫn
+            // được bắn nốt ở khối dưới; bắn xong thì target tự về null và nòng im tới khi qua vòng mới.
             if (!HasLiveTarget(b))
             {
-                var cand = GridBlockManager.Instance?.FindTargetCell(
-                    Data.Color, transform.position, transform.forward, b.Sign, _fireRange, _fireAngle, other.Target);
-                sawCell = cand != null;
+                b.Target = null;
+                b.TargetGen = 0;
+                b.FiredAtTarget = false;
 
-                // NHƯỜNG ĐẠN: nòng kia đang bám cell thì phải chừa đủ đạn cho nó bắn dứt điểm cell đó.
-                // Phần còn lại không đủ nuốt trọn cell này thì THÔI CHỐT — 2 nòng cùng bắn dở 2 cell rồi
-                // hết đạn thì chẳng cell nào vỡ, cell dở còn chặn luôn cell phía sau.
-                // Chỉ chặn khi nòng kia ĐANG bận (need > 0): nó rảnh mà cũng chặn thì mấy viên đạn cuối
-                // không nòng nào dám bắn, gun chết với đạn còn nguyên.
-                int reserved = NeedOf(other);
-                if (cand != null && reserved > 0 && cand.Available > Data.CountBullet - reserved) cand = null;
+                if (b.Armed)
+                {
+                    // Quạt CHỈ lọc lúc CHỌN target (bộ lọc nằm trong FindTargetCell). Đã chốt được cell
+                    // thì bắn DỨT ĐIỂM hết stack, kể cả khi gun đã trôi qua và cell ra ngoài quạt.
+                    var cand = GridBlockManager.Instance?.FindTargetCell(
+                        Data.Color, transform.position, transform.forward, b.Sign, _fireRange, _fireAngle,
+                        other.Target);
+                    bool sawCell = cand != null;
 
-                b.Target = cand;
-                b.TargetGen = cand != null ? cand.Generation : 0;
-            }
+                    // NHƯỜNG ĐẠN: nòng kia đang bám cell thì phải chừa đủ đạn cho nó bắn dứt điểm cell đó.
+                    // Phần còn lại không đủ nuốt trọn cell này thì THÔI CHỐT — 2 nòng cùng bắn dở 2 cell
+                    // rồi hết đạn thì chẳng cell nào vỡ, cell dở còn chặn luôn cell phía sau.
+                    // Chỉ chặn khi nòng kia ĐANG bận (need > 0): nó rảnh mà cũng chặn thì mấy viên đạn
+                    // cuối không nòng nào dám bắn, gun chết với đạn còn nguyên.
+                    int reserved = NeedOf(other);
+                    if (cand != null && reserved > 0 && cand.Available > Data.CountBullet - reserved) cand = null;
 
-            // sawCell (không phải b.Target): nòng nhường đạn vẫn coi như "còn thấy grid" → không tính là
-            // hết lượt, để khi nòng kia bắn xong và đạn rảnh ra thì nó vào cuộc được ngay.
-            if (sawCell) { b.HadTarget = true; b.IdleTimer = 0f; }
-            else if (b.HadTarget)
-            {
-                // Đã bắn xong cell của mình mà quạt không còn gì để chốt tiếp → nòng đã đi qua grid.
-                // HẾT LƯỢT: khoá tới hết vòng. Khoá theo TỪNG NÒNG chứ không theo cả gun — gộp chung thì
-                // chỉ cần 1 nòng còn thấy cell là gun không bao giờ khoá, và bắn suốt cả quãng quay lại.
-                // Chờ targetLostGrace mới khoá: cột đang dồn thì cell nào cũng PendingEntry, quạt trống
-                // trong chốc lát là bình thường, khoá ngay là nòng chết oan giữa cột.
-                b.IdleTimer += Time.deltaTime;
-                if (b.IdleTimer >= targetLostGrace) { b.Armed = false; return; }
+                    b.Target = cand;
+                    b.TargetGen = cand != null ? cand.Generation : 0;
+
+                    // sawCell (không phải b.Target): nòng nhường đạn vẫn coi như "còn thấy grid" → không
+                    // tính là hết lượt, để khi nòng kia bắn xong và đạn rảnh ra thì nó vào cuộc được ngay.
+                    if (sawCell) { b.HadTarget = true; b.IdleTimer = 0f; }
+                    else if (b.HadTarget)
+                    {
+                        // Đã bắn xong cell của mình mà quạt không còn gì để chốt tiếp → nòng đã đi qua
+                        // grid. HẾT LƯỢT: khoá tới hết vòng — không bắn, không target vào đâu nữa. Khoá
+                        // theo TỪNG NÒNG chứ không theo cả gun. Chờ targetLostGrace mới khoá: cột đang
+                        // dồn thì cell nào cũng PendingEntry, quạt trống trong chốc lát là bình thường.
+                        b.IdleTimer += Time.deltaTime;
+                        if (b.IdleTimer >= targetLostGrace) b.Armed = false;
+                    }
+                }
             }
 
             b.FireTimer -= Time.deltaTime;
-            // Chỉ bắn khi cell còn block CHƯA bị đạn đang bay đặt chỗ (tránh bắn dư).
+            // Bắn cell đang bám (kể cả khi đã hết lượt — cell dở phải được bắn hết). Chỉ bắn khi cell
+            // còn block CHƯA bị đạn đang bay đặt chỗ (tránh bắn dư).
             if (b.Target != null && b.FireTimer <= 0f && b.Target.Available > 0)
             {
                 Fire(b);
@@ -260,17 +268,35 @@ namespace Wayfu.Lamkn
             b.Armed = true;
             b.HadTarget = false;
             b.IdleTimer = 0f;
+            b.FiredAtTarget = false;
         }
 
         /// <summary>
-        /// Mở khoá bắn cho 1 vòng path mới (gun vừa về tới pos 0, hoặc vừa được deploy). Bỏ luôn target
-        /// cũ: vòng mới chọn lại từ đầu. Luật "dứt điểm từng cell" áp trong PHẠM VI 1 vòng — giữ target
-        /// qua vòng thì nòng ôm mãi 1 cell nó không còn với tới, kẹt cứng không bao giờ bắn nữa.
+        /// Mở khoá bắn cho vòng path mới (gun vừa về lại pos 0). Nòng bị khoá ở vòng trước được bật lại
+        /// và chọn target từ đầu (kiểm tra range như thường). Cell đang bắn DỞ từ vòng trước thì GIỮ
+        /// NGUYÊN — vứt ở đây là cell chết dở nằm chặn cột, vi phạm luật dứt điểm từng cell; nòng sẽ bắn
+        /// hết nó rồi mới chọn cell mới.
         /// </summary>
         private void ArmForNewLap()
         {
-            ResetBarrel(_right);
-            ResetBarrel(_left);
+            RearmBarrel(_right);
+            RearmBarrel(_left);
+        }
+
+        private void RearmBarrel(Barrel b)
+        {
+            b.Armed = true;
+            b.HadTarget = false;
+            b.IdleTimer = 0f;
+            // Chỉ giữ cell đang bắn DỞ (đã nổ ít nhất 1 phát) để bắn hết. Cell mới CHỐT mà chưa bắn phát
+            // nào thì bỏ — không thì vừa quay lại loop gun đã nã vào target rất xa từ vòng trước, thay vì
+            // chọn lại từ đầu theo range.
+            if (!HasLiveTarget(b) || !b.FiredAtTarget)
+            {
+                b.Target = null;
+                b.TargetGen = 0;
+                b.FiredAtTarget = false;
+            }
         }
 
         /// <summary>
@@ -294,6 +320,7 @@ namespace Wayfu.Lamkn
 
         private void Fire(Barrel b)
         {
+            b.FiredAtTarget = true; // từ giờ cell này là "bắn dở" — phải bắn hết, không được bỏ giữa chừng
             Data.CountBullet--;
             UpdateLabel();
 
@@ -361,32 +388,52 @@ namespace Wayfu.Lamkn
         }
 
 #if UNITY_EDITOR
-        // HAI quạt bắn: mỗi nòng quét TỪ hướng trước mặt (thân gun bám path) toả sang sườn của nó Spread độ.
-        // VÀNG = còn lượt bắn của vòng này; XÁM = đã bắn xong, đang trên đường quay về pos 0.
-        // Đường tới target: XANH = trong quạt, đang bắn. ĐỎ = cell còn sống nhưng đã ra ngoài quạt —
-        // nòng vẫn GIỮ nó (dứt điểm từng cell) và chờ vào lại quạt để bắn tiếp.
+        // HAI quạt CHỌN target: mỗi nòng quét TỪ hướng trước mặt (thân gun bám path) toả sang sườn của nó
+        // Spread độ. VÀNG = nòng còn lượt của vòng này; XÁM = nòng đã hết lượt (không chốt target mới nữa).
+        //
+        // Đường tới target — nhìn được nòng nào đang nhắm cell nào TRƯỚC khi nổ:
+        //   TRẮNG đứt nét = đã CHỐT nhưng chưa bắn phát nào (qua vòng là nhả ra, xem RearmBarrel)
+        //   XANH LÁ       = đang bắn dở, cell còn trong quạt
+        //   ĐỎ            = đang bắn dở, cell đã ra ngoài quạt — vẫn bắn nốt cho hết stack
+        // Ô vuông ở đầu đường = cell đang bị nhắm; nhãn = R/L + số block còn phải bắn (Available).
         private void OnDrawGizmos()
         {
-            //if (_state == GunState.Dead) return;
+            if (_state == GunState.Dead) return;
 
-            //Handles.color = _state == GunState.OnPath && !_fireArmed
-            //    ? new Color(0.5f, 0.5f, 0.5f, 0.5f)   // hết lượt: quạt xám
-            //    : new Color(1f, 0.85f, 0.2f, 0.9f);
+            DrawBarrelArc(_right);
+            DrawBarrelArc(_left);
 
-            //// Góc âm = quét ngược chiều → nòng trái toả sang trái, nòng phải sang phải, chung mép ở forward.
-            //Handles.DrawSolidArc(transform.position, Vector3.up, transform.forward, Spread * _right.Sign, _fireRange);
-            //Handles.DrawSolidArc(transform.position, Vector3.up, transform.forward, Spread * _left.Sign, _fireRange);
-
-            //if (_state != GunState.OnPath) return;
-            //DrawTargetLine(_right);
-            //DrawTargetLine(_left);
+            if (_state != GunState.OnPath) return;
+            DrawTargetLine(_right, "R");
+            DrawTargetLine(_left, "L");
         }
 
-        private void DrawTargetLine(Barrel b)
+        private void DrawBarrelArc(Barrel b)
+        {
+            // Xám theo TỪNG nòng: 2 nòng khoá độc lập, bên này hết lượt bên kia vẫn có thể còn.
+            Handles.color = !b.Armed
+                ? new Color(0.5f, 0.5f, 0.5f, 0.35f)
+                : new Color(1f, 0.85f, 0.2f, 0.9f);
+            // Góc âm = quét ngược chiều → nòng trái toả sang trái, nòng phải sang phải, chung mép ở forward.
+            Handles.DrawSolidArc(transform.position, Vector3.up, transform.forward, Spread * b.Sign, _fireRange);
+        }
+
+        private void DrawTargetLine(Barrel b, string label)
         {
             if (b.Target == null) return;
-            Gizmos.color = InDetectZone(b.Target, b) ? UnityEngine.Color.green : UnityEngine.Color.red;
-            Gizmos.DrawLine(transform.position, b.Target.transform.position);
+            Vector3 to = b.Target.transform.position;
+
+            Color col = !b.FiredAtTarget ? UnityEngine.Color.white
+                      : InDetectZone(b.Target, b) ? UnityEngine.Color.green
+                      : UnityEngine.Color.red;
+
+            Handles.color = col;
+            // Chưa bắn → đứt nét: phân biệt ngay "mới nhắm" với "đang nã".
+            if (b.FiredAtTarget) Handles.DrawLine(transform.position, to);
+            else Handles.DrawDottedLine(transform.position, to, 4f);
+
+            Handles.DrawWireCube(to, Vector3.one * 0.5f);
+            Handles.Label(to + Vector3.up * 0.8f, $"{label}:{b.Target.Available}");
         }
 #endif
     }
