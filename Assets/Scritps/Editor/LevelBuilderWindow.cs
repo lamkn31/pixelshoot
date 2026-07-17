@@ -538,7 +538,9 @@ namespace Wayfu.Lamkn
                 }
             }
 
-            // HAI quạt bắn của gun tại ĐIỂM VÀO path — mọi gun đều xuất phát từ đây rồi chạy dọc path.
+            // HAI quạt CHỌN TARGET của gun tại ĐIỂM VÀO path — mọi gun xuất phát từ đây rồi chạy dọc path.
+            // Quạt chỉ lọc lúc CHỌN: chốt được cell rồi thì nòng bắn dứt điểm hết stack kể cả khi cell đã
+            // trôi ra ngoài quạt, nên tầm bắn THỰC TẾ rộng hơn hình vẽ này.
             // Gun KHÔNG quay mặt về target: thân luôn hướng theo đường ray. Mỗi nòng quét TỪ hướng trước
             // mặt rồi toả sang sườn của nó đúng GunFireAngle độ — 2 quạt chung mép ở trục trước mặt, nòng
             // phải (R) toả sang phải, nòng trái (L) sang trái. Mỗi nòng có target riêng và không bắn trùng

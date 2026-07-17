@@ -19,14 +19,16 @@ namespace Wayfu.Lamkn
         [Tooltip("Khoảng cách (arc-length) giữa các station gun trên path.")]
         public float GunSpacing = 1.2f;
         public float FireInterval = 0.25f;
-        [Tooltip("Bán kính vùng PHÁT HIỆN của mỗi nòng. Cũng là ĐIỀU KIỆN BẮN — cell trôi ra ngoài là nòng " +
-                 "ngừng bắn (nhưng vẫn giữ target để bắn dứt điểm khi nó vào lại quạt).")]
+        [Tooltip("Bán kính vùng CHỌN target của mỗi nòng. Chỉ lọc lúc CHỌN, không phải điều kiện bắn: " +
+                 "chốt được cell rồi thì nòng bắn dứt điểm hết stack, kể cả khi gun đã trôi qua và cell " +
+                 "đã ra ngoài tầm.")]
         public float GunFireRange = 3f;
         [Tooltip("Góc TOẢ của mỗi nòng (độ), tính TỪ hướng trước mặt của gun (thân luôn bám path, không " +
                  "quay mặt về target) rồi mở sang sườn của nòng đó: nòng phải toả sang phải, nòng trái " +
                  "sang trái — 2 quạt chung mép ở trục trước mặt.\n" +
                  "Ví dụ 60 = mỗi nòng quét từ 0° tới 60° về phía mình. 180 = 2 quạt phủ kín vòng tròn " +
-                 "(mỗi nòng gác trọn 1 nửa mặt phẳng). Trên 180 không thêm được gì, sẽ bị kẹp về 180.")]
+                 "(mỗi nòng gác trọn 1 nửa mặt phẳng). Trên 180 không thêm được gì, sẽ bị kẹp về 180.\n" +
+                 "Như GunFireRange: chỉ lọc lúc CHỌN target, không gate phát bắn.")]
         [Range(1f, 180f)] public float GunFireAngle = 60f;
         [Tooltip("Arc-length của station trước nhất trên path.")]
         public float FrontStationDistance = 0f;
