@@ -331,6 +331,22 @@ namespace Wayfu.Lamkn
             if (Data.CountBullet <= 0) Die();
         }
 
+        /// <summary>
+        /// Đẩy hàng đạn tiến sẵn về phía target: hàng đáy (blockIndex 0) đứng nguyên, mỗi hàng lên cao
+        /// thêm BurstRowLead nữa. Gần đích hơn ⇒ tới TRƯỚC, nên stack vỡ dần từ trên xuống thay vì nổ
+        /// một phát cả cột.
+        /// Kẹp ở 80% quãng đường: lead quá tay là đạn sinh ngay sát (hoặc quá) block, chạm đích tức thì
+        /// và mất luôn cái vệt bay.
+        /// </summary>
+        private Vector3 RowLeadOffset(Vector3 to, Vector3 from, int blockIndex)
+        {
+            if (_fire.BurstRowLead <= 0f || blockIndex <= 0) return Vector3.zero;
+            Vector3 dir = to - from;
+            float dist = dir.magnitude;
+            if (dist < 1e-4f) return Vector3.zero;
+            return dir / dist * Mathf.Min(_fire.BurstRowLead * blockIndex, dist * 0.8f);
+        }
+
         private void FireOne(Barrel b, int blockIndex)
         {
             Data.CountBullet--;
@@ -343,7 +359,11 @@ namespace Wayfu.Lamkn
             // BurstSpawnStacked: sinh viên đạn sẵn ở ĐÚNG độ cao của block nó nhắm → cả loạt xếp thành
             // cột ngay tại nòng rồi bay NGANG sang, không toả chéo. Chỉ có nghĩa khi bắn loạt: mode
             // Single luôn chỉ 1 viên nhắm block trên cùng, nâng nó lên chỉ làm đạn xuất phát lơ lửng.
-            if (_fire.BurstSpawnStacked && _fire.Mode == GunFireMode.BurstPerCell) from += aim;
+            if (_fire.BurstSpawnStacked && _fire.Mode == GunFireMode.BurstPerCell)
+            {
+                from += aim;
+                from += RowLeadOffset(b.Target.transform.position + aim, from, blockIndex);
+            }
 
             if (bullet != null)
                 bullet.Launch(from, b.Target, _fire.BulletSpeed, Data.Color, aim);

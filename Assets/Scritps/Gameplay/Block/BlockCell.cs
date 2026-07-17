@@ -94,7 +94,7 @@ namespace Wayfu.Lamkn
         /// </summary>
         public void ShowSpawnerIndicator(bool on, float dirAngle = 0f)
         {
-            Debug.Log(dirAngle);
+            //Debug.Log(dirAngle);
             if (spawnerIndicator == null) return;
             spawnerIndicator.SetActive(on);
             if (on)

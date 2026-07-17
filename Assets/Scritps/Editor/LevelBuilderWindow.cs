@@ -418,8 +418,9 @@ namespace Wayfu.Lamkn
             if (_gsSO == null || _gsSO.targetObject != gs) _gsSO = new SerializedObject(gs);
             _gsSO.Update();
             foreach (var name in new[] { "SlotGunSpacing", "MaxGunOnPath", "GunSpeed", "GunSpacing",
-                "FireInterval", "FireMode", "BurstSpawnStacked", "GunFireRange", "GunFireAngle",
-                "FrontStationDistance", "BulletSpeed", "BlockStackSpacing", "BlockCollapseDuration" })
+                "FireInterval", "FireMode", "BurstSpawnStacked", "BurstRowLead", "GunFireRange",
+                "GunFireAngle", "FrontStationDistance", "BulletSpeed", "BlockStackSpacing",
+                "BlockCollapseDuration" })
                 EditorGUILayout.PropertyField(_gsSO.FindProperty(name));
             _gsSO.ApplyModifiedProperties();
             EditorGUILayout.EndVertical();

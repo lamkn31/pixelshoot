@@ -32,6 +32,7 @@ namespace Wayfu.Lamkn
         public float BulletSpeed;
         public GunFireMode Mode;
         public bool BurstSpawnStacked;
+        public float BurstRowLead;
 
         /// <summary>Giá trị mặc định dùng khi chưa có asset GameSettings.</summary>
         public static GunFireConfig FromSettings(GameSettings gs) => new GunFireConfig
@@ -42,6 +43,7 @@ namespace Wayfu.Lamkn
             BulletSpeed = gs != null ? gs.BulletSpeed : 14f,
             Mode = gs != null ? gs.FireMode : GunFireMode.Single,
             BurstSpawnStacked = gs != null && gs.BurstSpawnStacked,
+            BurstRowLead = gs != null ? gs.BurstRowLead : 0f,
         };
     }
 

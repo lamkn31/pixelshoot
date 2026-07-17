@@ -29,6 +29,13 @@ namespace Wayfu.Lamkn
                  "Bật = mỗi viên sinh sẵn ở đúng ĐỘ CAO của block nó nhắm (spacing trục Y lấy luôn của " +
                  "stack cell đó) → cả loạt xếp thành cột ngay tại nòng rồi bay NGANG sang, không chéo.")]
         public bool BurstSpawnStacked;
+        [Tooltip("CHỈ dùng khi BurstSpawnStacked bật. Mỗi hàng đạn tính từ DƯỚI lên được đẩy sẵn về phía " +
+                 "target thêm ngần này (world units): hàng đáy 0, hàng 2 = x, hàng 3 = 2x…\n" +
+                 "Hàng càng cao càng gần đích → tới nơi TRƯỚC, nhìn rõ stack vỡ dần từ trên xuống (khớp " +
+                 "thứ tự block bị gỡ). 0 = cả loạt xuất phát cùng vạch, tới gần như cùng lúc.\n" +
+                 "BulletSpeed càng cao thì càng phải để lớn mới thấy: 100 đơn vị/giây thì lệch 1 đơn vị " +
+                 "chỉ ra 10ms.")]
+        [Min(0f)] public float BurstRowLead;
         [Tooltip("Bán kính vùng CHỌN target của mỗi nòng. Chỉ lọc lúc CHỌN, không phải điều kiện bắn: " +
                  "chốt được cell rồi thì nòng bắn dứt điểm hết stack, kể cả khi gun đã trôi qua và cell " +
                  "đã ra ngoài tầm.")]
