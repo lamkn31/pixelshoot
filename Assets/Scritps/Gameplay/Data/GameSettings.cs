@@ -24,6 +24,11 @@ namespace Wayfu.Lamkn
                  "viên bay tới 1 block trong stack → cả cell vỡ trong 1 lượt. FireInterval khi đó chỉ là " +
                  "nhịp nghỉ giữa 2 CELL, không phải giữa 2 viên.")]
         public GunFireMode FireMode = GunFireMode.Single;
+        [Tooltip("CHỈ dùng khi FireMode = BurstPerCell.\n" +
+                 "Tắt = cả loạt sinh CHỤM tại 1 điểm ở nòng rồi toả ra từng block.\n" +
+                 "Bật = mỗi viên sinh sẵn ở đúng ĐỘ CAO của block nó nhắm (spacing trục Y lấy luôn của " +
+                 "stack cell đó) → cả loạt xếp thành cột ngay tại nòng rồi bay NGANG sang, không chéo.")]
+        public bool BurstSpawnStacked;
         [Tooltip("Bán kính vùng CHỌN target của mỗi nòng. Chỉ lọc lúc CHỌN, không phải điều kiện bắn: " +
                  "chốt được cell rồi thì nòng bắn dứt điểm hết stack, kể cả khi gun đã trôi qua và cell " +
                  "đã ra ngoài tầm.")]

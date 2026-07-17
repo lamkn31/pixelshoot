@@ -40,11 +40,7 @@ namespace Wayfu.Lamkn
         public bool IsOnPath => _state == GunState.OnPath;
 
         private GunState _state = GunState.InSlot;
-        private float _fireInterval = 0.25f;
-        private float _fireRange = 3f;
-        private float _fireAngle = 360f; // góc quạt phát hiện; 360 = quét tròn
-        private float _bulletSpeed = 14f;
-        private GunFireMode _fireMode = GunFireMode.Single;
+        private GunFireConfig _fire = GunFireConfig.FromSettings(null);
         private Renderer[] _renderers;
         private Coroutine _moveRoutine;
         private Pooler<Gun> _pool;
@@ -77,7 +73,7 @@ namespace Wayfu.Lamkn
                                                 && !b.Target.IsEmpty && b.Target.Color == Data.Color;
 
         /// <summary>Góc toả tối đa của 1 nòng: quá 180° là đã kín nửa mặt phẳng của nó, không thêm được gì.</summary>
-        private float Spread => Mathf.Clamp(_fireAngle, 0f, 180f);
+        private float Spread => Mathf.Clamp(_fire.Angle, 0f, 180f);
 
         public void OnInitializedInPool(Pooler<Gun> pool) => _pool = pool;
 
@@ -115,15 +111,10 @@ namespace Wayfu.Lamkn
             _renderers = list.ToArray();
         }
 
-        public void Init(GunData data, float fireInterval, float fireRange, float fireAngle, float bulletSpeed,
-                         GunFireMode fireMode)
+        public void Init(GunData data, GunFireConfig fire)
         {
             Data = new GunData { Color = data.Color, CountBullet = data.CountBullet };
-            _fireInterval = fireInterval;
-            _fireRange = fireRange;
-            _fireAngle = fireAngle;
-            _bulletSpeed = bulletSpeed;
-            _fireMode = fireMode;
+            _fire = fire;
 
             // Reset trạng thái (item pooled có thể tái dùng).
             _lastLap = 0;
@@ -223,7 +214,7 @@ namespace Wayfu.Lamkn
                     // Quạt CHỈ lọc lúc CHỌN target (bộ lọc nằm trong FindTargetCell). Đã chốt được cell
                     // thì bắn DỨT ĐIỂM hết stack, kể cả khi gun đã trôi qua và cell ra ngoài quạt.
                     var cand = GridBlockManager.Instance?.FindTargetCell(
-                        Data.Color, transform.position, transform.forward, b.Sign, _fireRange, _fireAngle,
+                        Data.Color, transform.position, transform.forward, b.Sign, _fire.Range, _fire.Angle,
                         other.Target);
                     bool sawCell = cand != null;
 
@@ -259,7 +250,7 @@ namespace Wayfu.Lamkn
             if (b.Target != null && b.FireTimer <= 0f && b.Target.Available > 0)
             {
                 Fire(b);
-                b.FireTimer = _fireInterval;
+                b.FireTimer = _fire.Interval;
             }
         }
 
@@ -303,7 +294,7 @@ namespace Wayfu.Lamkn
         }
 
         /// <summary>
-        /// Cell có nằm trong vùng CHỌN target của nòng này không: bán kính _fireRange, quạt tính TỪ hướng
+        /// Cell có nằm trong vùng CHỌN target của nòng này không: bán kính _fire.Range, quạt tính TỪ hướng
         /// trước mặt của gun (thân bám path) rồi toả sang sườn của nòng đúng <see cref="Spread"/> độ. Đo
         /// trên sàn XZ (bỏ qua chênh lệch Y).
         /// <para>Chỉ dùng cho gizmo — vùng này KHÔNG gate phát bắn: chốt được cell rồi thì bắn dứt điểm
@@ -315,7 +306,7 @@ namespace Wayfu.Lamkn
             if (cell == null) return false;
             Vector3 d = cell.transform.position - transform.position; d.y = 0f;
             float sqr = d.sqrMagnitude;
-            if (sqr > _fireRange * _fireRange) return false;
+            if (sqr > _fire.Range * _fire.Range) return false;
             if (sqr < 1e-6f) return true;
             if (Vector3.Dot(transform.right, d) * b.Sign < 0f) return false; // sai sườn
             return Vector3.Dot(transform.forward, d) >= Mathf.Cos(Spread * Mathf.Deg2Rad) * Mathf.Sqrt(sqr);
@@ -327,7 +318,7 @@ namespace Wayfu.Lamkn
 
             // BurstPerCell: nhả TRỌN 1 loạt đúng bằng số block cell còn nợ (Available), mỗi viên nhắm 1
             // block trong stack → cả cell vỡ trong 1 lượt. Kẹp theo CountBullet phòng khi băng không đủ.
-            int shots = _fireMode == GunFireMode.BurstPerCell
+            int shots = _fire.Mode == GunFireMode.BurstPerCell
                 ? Mathf.Min(b.Target.Available, Data.CountBullet)
                 : 1;
 
@@ -346,9 +337,16 @@ namespace Wayfu.Lamkn
             b.Target.ReserveHit();
 
             var bullet = PoolManager.Instance != null ? PoolManager.Instance.GetBullet() : null;
+            Vector3 aim = b.Target.StackOffset(blockIndex);        // lệch tới block trong stack
             Vector3 from = b.Muzzle != null ? b.Muzzle.position : transform.position;
+
+            // BurstSpawnStacked: sinh viên đạn sẵn ở ĐÚNG độ cao của block nó nhắm → cả loạt xếp thành
+            // cột ngay tại nòng rồi bay NGANG sang, không toả chéo. Chỉ có nghĩa khi bắn loạt: mode
+            // Single luôn chỉ 1 viên nhắm block trên cùng, nâng nó lên chỉ làm đạn xuất phát lơ lửng.
+            if (_fire.BurstSpawnStacked && _fire.Mode == GunFireMode.BurstPerCell) from += aim;
+
             if (bullet != null)
-                bullet.Launch(from, b.Target, _bulletSpeed, Data.Color, b.Target.StackOffset(blockIndex));
+                bullet.Launch(from, b.Target, _fire.BulletSpeed, Data.Color, aim);
             else
             {
                 b.Target.ApplyHit(); // fallback không có pool
@@ -433,7 +431,7 @@ namespace Wayfu.Lamkn
                 ? new Color(0.5f, 0.5f, 0.5f, 0.35f)
                 : new Color(1f, 0.85f, 0.2f, 0.9f);
             // Góc âm = quét ngược chiều → nòng trái toả sang trái, nòng phải sang phải, chung mép ở forward.
-            Handles.DrawSolidArc(transform.position, Vector3.up, transform.forward, Spread * b.Sign, _fireRange);
+            Handles.DrawSolidArc(transform.position, Vector3.up, transform.forward, Spread * b.Sign, _fire.Range);
         }
 
         private void DrawTargetLine(Barrel b, string label)

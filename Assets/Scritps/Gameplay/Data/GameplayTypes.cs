@@ -19,6 +19,33 @@ namespace Wayfu.Lamkn
     public enum GunFireMode { Single, BurstPerCell }
 
     /// <summary>
+    /// Bó config bắn của gun: đọc 1 lần từ <see cref="GameSettings"/> rồi truyền xuống slot → gun.
+    /// Gom lại thay vì truyền rời từng tham số — danh sách đã tới 7 cái với 3 float liền nhau
+    /// (Range/Angle/BulletSpeed), hoán nhầm 2 cái thì compile vẫn trót lọt mà gameplay sai âm thầm.
+    /// </summary>
+    [Serializable]
+    public struct GunFireConfig
+    {
+        public float Interval;
+        public float Range;
+        public float Angle;
+        public float BulletSpeed;
+        public GunFireMode Mode;
+        public bool BurstSpawnStacked;
+
+        /// <summary>Giá trị mặc định dùng khi chưa có asset GameSettings.</summary>
+        public static GunFireConfig FromSettings(GameSettings gs) => new GunFireConfig
+        {
+            Interval = gs != null ? gs.FireInterval : 0.25f,
+            Range = gs != null ? gs.GunFireRange : 3f,
+            Angle = gs != null ? gs.GunFireAngle : 360f,
+            BulletSpeed = gs != null ? gs.BulletSpeed : 14f,
+            Mode = gs != null ? gs.FireMode : GunFireMode.Single,
+            BurstSpawnStacked = gs != null && gs.BurstSpawnStacked,
+        };
+    }
+
+    /// <summary>
     /// Cách dựng đường cong của path từ danh sách waypoint.
     /// <para><b>RoundedCorner</b>: nối thẳng waypoint, chỉ BO tròn tại góc theo CornerRadius → đa số là
     /// đoạn thẳng.</para>

@@ -18,6 +18,7 @@ MonoBehaviour:
   GunSpacing: 3
   FireInterval: 0.02
   FireMode: 1
+  BurstSpawnStacked: 1
   GunFireRange: 12
   GunFireAngle: 50
   FrontStationDistance: 0
