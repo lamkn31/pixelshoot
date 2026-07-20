@@ -158,9 +158,10 @@ namespace Wayfu.Lamkn
         /// Chọn cell cùng màu để bắn, trong số các cell KHÔNG BỊ CHẶN và nằm trong
         /// <paramref name="detectRange"/> (vòng phát hiện, tròn trên sàn XZ). Xét MỌI grid — gun chạy giữa
         /// 2 grid sẽ ăn được cả hai bên.
-        /// <para>Thứ tự ưu tiên: cell SÂU hơn (row lớn) trước — cell sâu chỉ hở khi cell chặn nó đã sạch,
-        /// nên gun ăn hàng 0 → xuống sâu dần trong cùng cột. Cùng độ sâu thì lấy cell GẦN NHẤT: vì cột trải
-        /// dọc path nên gần nhất cũng chính là tuần tự theo index, không nhảy cóc.</para>
+        /// <para>Thứ tự ưu tiên: cell GẦN gun nhất theo VỊ TRÍ (khoảng cách XZ). Cell front luôn gần hơn
+        /// cell sâu, nên gun ăn từ gần ra xa — đúng cho cả Arc/Rect lẫn Spline (grid uốn lượn, mỗi hàng số
+        /// cell khác nhau nên "cột" không thẳng, không thể ưu tiên theo row). Lọc gần nhất còn bền với sai
+        /// số của IsShootable: cell sâu có lỡ hở nhầm thì vẫn ở xa nên không bị chọn thay cell front.</para>
         /// <para>Bộ lọc range+góc ở đây phải khớp Gun.InDetectZone: Gun gọi lại mỗi frame để buông target
         /// khi quạt đã trôi qua, hai bên lệch nhau thì target vừa chọn xong đã bị loại ngay frame sau.</para>
         /// </summary>
@@ -175,7 +176,6 @@ namespace Wayfu.Lamkn
                                         float detectRange, float spreadAngle, BlockCell exclude = null)
         {
             BlockCell best = null;
-            int bestRow = -1;
             float bestSqr = float.MaxValue;
             float detectSqr = detectRange * detectRange;
 
@@ -190,6 +190,13 @@ namespace Wayfu.Lamkn
             float cosSpread = Mathf.Cos(Mathf.Clamp(spreadAngle, 0f, 180f) * Mathf.Deg2Rad);
 
             foreach (var gr in _grids)
+            {
+                // Grid gán CỨNG 1 bên → chỉ nòng cùng bên bắn được; grid của nòng bên kia thì bỏ nguyên.
+                // Khi đã khớp bên thì KHÔNG kiểm tra sườn hình học nữa (nó lật dấu khi path cong / grid chếch).
+                var gside = gr.Data.Side;
+                bool sideLocked = gside != GridSide.Any;
+                if (sideLocked && (gside == GridSide.Right) != (sideSign > 0f)) continue;
+
                 for (int r = 0; r < gr.Rows.Count; r++)
                 {
                     var row = gr.Rows[r];
@@ -206,15 +213,17 @@ namespace Wayfu.Lamkn
                         // Trong quạt của nòng ⇔ ĐÚNG SƯỜN (dot với vector sườn cùng dấu) VÀ lệch khỏi
                         // hướng trước mặt không quá spreadAngle (dot(forward, d̂) >= cos spread).
                         // sqr>eps để cell trùng vị trí gun không chia cho 0 (luôn coi là trong quạt).
+                        // Grid gán bên → bỏ kiểm tra SƯỜN (đã chốt theo Side), nhưng GIỮ quạt trước mặt để
+                        // không bắn giật lùi vào grid đã đi qua.
                         if (hasDir && sqr > 1e-6f)
                         {
-                            if (Vector3.Dot(sideVec, d) * sideSign < 0f) continue;
+                            if (!sideLocked && Vector3.Dot(sideVec, d) * sideSign < 0f) continue;
                             if (Vector3.Dot(forward, d) < cosSpread * Mathf.Sqrt(sqr)) continue;
                         }
-                        if (r > bestRow || (r == bestRow && sqr < bestSqr))
-                        { bestRow = r; bestSqr = sqr; best = cell; }
+                        if (sqr < bestSqr) { bestSqr = sqr; best = cell; }
                     }
                 }
+            }
             return best;
         }
 

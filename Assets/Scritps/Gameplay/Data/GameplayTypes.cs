@@ -106,6 +106,13 @@ namespace Wayfu.Lamkn
     public enum BlockGridShape { Arc, Rect, Spline }
 
     /// <summary>
+    /// Bên của grid so với path — gán CỨNG lúc thiết kế. Left/Right = CHỈ nòng cùng bên của gun bắn được
+    /// grid này (bỏ qua kiểm tra sườn theo hình học vốn lật dấu khi path cong / grid nằm chếch).
+    /// Any = để gun tự quyết theo quạt (2 nòng, hành vi cũ).
+    /// </summary>
+    public enum GridSide { Any, Left, Right }
+
+    /// <summary>
     /// 1 grid xếp block trên sàn XZ. Row 0 = ngoài cùng, gần path (gun ăn từ row 0 vào trong).
     /// <para><b>Shape = Arc</b>: vòng cung (fan). Mỗi hàng là 1 cung bán kính BaseRadius + row*RowSpacing,
     /// dãn đều trong góc mở ArcAngle. Số cell mỗi hàng theo <see cref="Layout"/>: ArcLength = chiều dài cung
@@ -118,6 +125,8 @@ namespace Wayfu.Lamkn
     {
         [Tooltip("Arc = vòng cung quanh Center. Rect = lưới chữ nhật thông thường (hàng thẳng theo X).")]
         public BlockGridShape Shape = BlockGridShape.Arc;
+        [Tooltip("Bên grid so với path. Left/Right = CHỈ nòng cùng bên của gun bắn được. Any = theo quạt gun.")]
+        public GridSide Side = GridSide.Any;
         [Tooltip("Tâm grid (sàn XZ).")]
         public Vector3 Center;
         [Tooltip("Xoay cả grid quanh trục Y (độ). 0 = grid mở/sâu dần về +Z.")]

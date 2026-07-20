@@ -1653,7 +1653,11 @@ namespace Wayfu.Lamkn
                 var shapeProp = grid.FindPropertyRelative("Shape");
                 bool isRect = shapeProp.enumValueIndex == (int)BlockGridShape.Rect;
                 bool isSpline = shapeProp.enumValueIndex == (int)BlockGridShape.Spline;
+                EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.PropertyField(shapeProp, new GUIContent("Shape"));
+                EditorGUILayout.PropertyField(grid.FindPropertyRelative("Side"), new GUIContent("Side",
+                    "Left/Right = chỉ nòng cùng bên của gun bắn được grid này. Any = theo quạt gun."));
+                EditorGUILayout.EndHorizontal();
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("Center"));
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("Rotation"),
                     new GUIContent("Rotation (Y°)", "Xoay cả grid quanh trục Y. Kéo handle XANH LÁ trong khung giữa."));
