@@ -68,9 +68,14 @@ namespace Wayfu.Lamkn
         private readonly Barrel _right = new Barrel { Sign = 1f };
         private readonly Barrel _left = new Barrel { Sign = -1f };
 
-        /// <summary>Target của nòng còn sống và đúng màu — object pooled có thể đã thành cell khác.</summary>
+        /// <summary>
+        /// Target của nòng còn sống và đúng màu — object pooled có thể đã thành cell khác. PendingEntry
+        /// (cell đang TRƯỢT lúc dồn hàng) coi như không còn sống: cell front đang bắn không bao giờ trượt
+        /// (nó ở row 0, chẳng có gì tiến vào), nên check này chỉ loại target lộ ra thoáng qua khi dồn.
+        /// </summary>
         private bool HasLiveTarget(Barrel b) => b.Target != null && b.Target.Generation == b.TargetGen
-                                                && !b.Target.IsEmpty && b.Target.Color == Data.Color;
+                                                && !b.Target.IsEmpty && !b.Target.PendingEntry
+                                                && b.Target.Color == Data.Color;
 
         /// <summary>Góc toả tối đa của 1 nòng: quá 180° là đã kín nửa mặt phẳng của nó, không thêm được gì.</summary>
         private float Spread => Mathf.Clamp(_fire.Angle, 0f, 180f);
@@ -207,6 +212,7 @@ namespace Wayfu.Lamkn
         /// <summary>Chạy 1 bên nòng.</summary>
         private void TickBarrel(Barrel b, Barrel other)
         {
+            bool justAcquired = false; // vừa CHỐT target mới ở frame này → chưa bắn (chờ 1 frame cho ổn)
             // Chỉ được CHỌN target mới khi cell đang bám đã bị phá HẾT (dứt điểm từng cell) VÀ nòng còn
             // lượt của vòng này. Hết lượt (!Armed) thì KHÔNG nhặt cell mới — nhưng cell đang bắn DỞ vẫn
             // được bắn nốt ở khối dưới; bắn xong thì target tự về null và nòng im tới khi qua vòng mới.
@@ -235,6 +241,7 @@ namespace Wayfu.Lamkn
 
                     b.Target = cand;
                     b.TargetGen = cand != null ? cand.Generation : 0;
+                    justAcquired = cand != null;
 
                     // sawCell (không phải b.Target): nòng nhường đạn vẫn coi như "còn thấy grid" → không
                     // tính là hết lượt, để khi nòng kia bắn xong và đạn rảnh ra thì nó vào cuộc được ngay.
@@ -253,8 +260,9 @@ namespace Wayfu.Lamkn
 
             b.FireTimer -= Time.deltaTime;
             // Bắn cell đang bám (kể cả khi đã hết lượt — cell dở phải được bắn hết). Chỉ bắn khi cell
-            // còn block CHƯA bị đạn đang bay đặt chỗ (tránh bắn dư).
-            if (b.Target != null && b.FireTimer <= 0f && b.Target.Available > 0)
+            // còn block CHƯA bị đạn đang bay đặt chỗ (tránh bắn dư). KHÔNG bắn ở frame vừa chốt target:
+            // cell lộ ra thoáng qua lúc dồn hàng (transient) sẽ bị thay ở frame sau → không phí đạn bắn nhầm.
+            if (b.Target != null && !justAcquired && b.FireTimer <= 0f && b.Target.Available > 0)
             {
                 Fire(b);
                 b.FireTimer = _fire.Interval;
@@ -444,7 +452,7 @@ namespace Wayfu.Lamkn
             if (_state == GunState.Dead) return;
 
             DrawBarrelArc(_right);
-            DrawBarrelArc(_left);
+            //DrawBarrelArc(_left);
 
             if (_state != GunState.OnPath) return;
             DrawTargetLine(_right, "R");
