@@ -20,8 +20,25 @@ namespace Wayfu.Lamkn
         public int BlockCol { get; private set; }
         public int Depth { get; private set; }
 
+        /// <summary>
+        /// Cell KHÔNG bao giờ bị gun ngắm và KHÔNG dồn hàng — đứng yên làm nguồn. Bật cho cell Spawner8
+        /// (nguồn 8 hướng ở giữa grid bị path bao quanh): nó chỉ nhả block ra 8 ô xung quanh chứ bản thân
+        /// không thể bị phá trực tiếp.
+        /// </summary>
+        public bool Indestructible { get; private set; }
+
+        /// <summary>
+        /// Cell thuộc grid bị path bao nhiều mặt (ShootableEdges != None). Gun dùng cờ này để KHÔNG tự khoá
+        /// bắn "1 lượt/vòng" khi đang vòng quanh grid đó — nó cần bắn được từng mặt lần lượt khi đi qua.
+        /// </summary>
+        public bool MultiSideGrid { get; private set; }
+
+        /// <summary>Gán khi dựng cell (GridBlockManager biết ShootableEdges của grid).</summary>
+        public void SetMultiSide(bool on) => MultiSideGrid = on;
+
         /// <summary>Cập nhật index cột khi cell dồn lên ô khác (Arc cột lệch: index có thể đổi).</summary>
         public void SetColumn(int col) => BlockCol = col;
+
 
         /// <summary>
         /// Cell đang TRƯỢT tới ô của nó (vừa nhả ra, hoặc đang dồn hàng) → gun không được ngắm.
@@ -75,6 +92,9 @@ namespace Wayfu.Lamkn
             _blockScale = blockScale == Vector3.zero ? Vector3.one : blockScale;
             BlockCol = data.BlockCol;
             Depth = data.SpawnerDepth;
+            // Nguồn 8 hướng = bất tử, đứng yên: nó chỉ là ô hiển thị "màu kế tiếp sẽ nhả ra". Không bao giờ
+            // bị gun bắn trực tiếp; khi nhả hết sequence thì GridBlockManager tự despawn nó.
+            Indestructible = data.Type == BlockCellType.Spawner8;
             _pendingHits = 0;
             Generation++;                    // object pool tái dùng → đây là 1 cell MỚI
             PendingEntry = false;            // reset cho item pooled; MoveTo tự bật khi cell trượt

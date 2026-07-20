@@ -89,8 +89,8 @@ namespace Wayfu.Lamkn
                             d.TryGetValue(c.Color, out var v);
                             d[c.Color] = v + c.BlockStackCt;
                         }
-                        // Cell Spawner: các cell phía sau cũng phải bắn → tính vào cân bằng.
-                        if (c.Type != BlockCellType.Spawner || c.Queue == null) continue;
+                        // Cell Spawner/Spawner8: các cell trong hàng đợi cũng phải bắn → tính vào cân bằng.
+                        if (!c.Type.IsSpawner() || c.Queue == null) continue;
                         foreach (var q in c.Queue)
                         {
                             if (q == null || q.BlockStackCt <= 0) continue;

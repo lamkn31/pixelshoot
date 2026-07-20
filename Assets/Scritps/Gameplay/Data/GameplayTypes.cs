@@ -82,8 +82,20 @@ namespace Wayfu.Lamkn
     /// <para><b>Normal</b>: phá hết stack là cell biến mất.</para>
     /// <para><b>Spawner</b>: có hàng đợi cell PHÍA SAU. Phá hết stack hiện tại → đẩy cell kế trong hàng đợi
     /// ra ĐÚNG vị trí đó (đổi màu/stack theo mục kế); hết hàng đợi mới thật sự biến mất.</para>
+    /// <para><b>Spawner8</b>: như Spawner ở ô gốc, NHƯNG còn nhả thêm vào ô TRỐNG ở 8 ô xung quanh
+    /// (4 dọc/ngang + 4 chéo) — không chỉ dồn theo 1 hướng cột như Spawner thường. Hợp với grid cột
+    /// thẳng (Rect / Arc-Uniform); grid ArcLength hàng lệch số cell thì ô kề theo index có thể xiên.</para>
     /// </summary>
-    public enum BlockCellType { Normal, Spawner }
+    public enum BlockCellType { Normal, Spawner, Spawner8 }
+
+    public static class BlockCellTypeExt
+    {
+        /// <summary>Cell có hàng đợi nhả thêm không (gom cả Spawner 1 hướng lẫn Spawner8) — mọi chỗ
+        /// xử lý "cell có Queue" (build nguồn, cân bằng bullet↔block, vẽ ghost editor) đi qua đây để
+        /// thêm loại spawner mới không phải sửa rải rác.</summary>
+        public static bool IsSpawner(this BlockCellType t) =>
+            t == BlockCellType.Spawner || t == BlockCellType.Spawner8;
+    }
 
     /// <summary>
     /// Cách chia số cell mỗi hàng của grid.
@@ -120,6 +132,18 @@ namespace Wayfu.Lamkn
     /// dù cell sập ở gần hơn. Chỉ khi hết cell hàng 0 trong range mới ăn tới cell hàng sâu.</para>
     /// </summary>
     public enum CoreGameType { NearestCell, FrontRowFirst }
+
+    /// <summary>
+    /// Các CẠNH của grid mà gun bắn được — cho grid bị path bao quanh nhiều mặt.
+    /// <para><b>None</b> (mặc định, giữ hành vi cũ): chỉ hàng 0 (mặt Front, sát path) bắn được, ăn dần
+    /// vào trong; các hàng sâu bị hàng trước che.</para>
+    /// <para>Bật cạnh nào thì cell lộ ra ở cạnh đó bắn được: <b>Front</b> = phía hàng 0, <b>Back</b> =
+    /// phía hàng cuối, <b>Left</b> = đầu index 0 mỗi hàng, <b>Right</b> = cuối index mỗi hàng. Cell chỉ
+    /// bắn được khi mọi ô giữa nó và 1 cạnh ĐANG BẬT đã trống → peel dần từ ngoài vào. Spawner8 ở giữa
+    /// không bao giờ bị ngắm (xem <see cref="BlockCell"/>.Indestructible).</para>
+    /// </summary>
+    [Flags]
+    public enum GridEdges { None = 0, Front = 1, Back = 2, Left = 4, Right = 8 }
 
     /// <summary>
     /// 1 grid xếp block trên sàn XZ. Row 0 = ngoài cùng, gần path (gun ăn từ row 0 vào trong).
@@ -159,6 +183,9 @@ namespace Wayfu.Lamkn
         public Vector3 CellScale = Vector3.one;
         [Tooltip("ArcLength = hàng ra xa nhiều cell hơn (cột lệch). Uniform = mọi hàng bằng nhau (cột thẳng).")]
         public BlockGridLayout Layout = BlockGridLayout.ArcLength;
+        [Tooltip("Các CẠNH gun bắn được (grid bị path bao quanh nhiều mặt). None = mặc định cũ: chỉ mặt " +
+                 "Front (hàng 0). Bật thêm Back/Left/Right để phá được từ nhiều phía; Spawner8 ở giữa vẫn bất tử.")]
+        public GridEdges ShootableEdges = GridEdges.None;
 
         [Header("Spline (chỉ dùng khi Shape = Spline)")]
         [Tooltip("Waypoint của đường uốn lượn, toạ độ LOCAL so với Center + Rotation — dời/xoay grid là " +
@@ -344,18 +371,53 @@ namespace Wayfu.Lamkn
             return p + normal * (BaseRadius + row * RowSpacing);
         }
 
-        private float RowLength(int row)
+        // Cache mẫu arc-length THEO HÀNG cho Arc/Spline — khoá theo hình dạng grid. RowLength/PosByLength
+        // gốc gọi PosAlong 48 lần MỖI lần, mà editor lại gọi chúng cho từng cell mỗi frame → giật khi
+        // nhiều grid. Dựng 1 lần rồi tra O(1)/nhị phân, lệch hình mới dựng lại. (Rect không đi qua đây:
+        // ElementsInRow/CellPosAt của Rect tính thẳng, không đụng PosAlong.)
+        private struct RowSample { public Vector3[] Pts; public float[] Arc; public float Total; }
+        [NonSerialized] private Dictionary<int, RowSample> _rowCache;
+        [NonSerialized] private int _geoKey;
+        [NonSerialized] private bool _geoBuilt;
+
+        // Mọi thứ ảnh hưởng PosAlong (cả Arc lẫn Spline) gộp thành 1 số — lệch là bỏ cache dựng lại.
+        private int GeometryKey()
         {
-            float len = 0f;
-            Vector3 prev = PosAlong(row, 0f);
-            for (int i = 1; i <= SampleCount; i++)
+            unchecked
             {
-                Vector3 p = PosAlong(row, i / (float)SampleCount);
-                len += Vector3.Distance(prev, p);
-                prev = p;
+                int h = 17;
+                h = h * 31 + (int)Shape;
+                h = h * 31 + ArcAngle.GetHashCode();
+                h = h * 31 + BaseRadius.GetHashCode();
+                h = h * 31 + RowSpacing.GetHashCode();
+                h = h * 31 + SpiralGrowth.GetHashCode();
+                h = h * 31 + Center.GetHashCode();
+                h = h * 31 + Rotation.GetHashCode();
+                if (Shape == BlockGridShape.Spline) h = h * 31 + SplineKey();
+                return h;
             }
-            return len;
         }
+
+        private RowSample GetRow(int row)
+        {
+            int k = GeometryKey();
+            if (!_geoBuilt || k != _geoKey || _rowCache == null)
+            {
+                _geoKey = k; _geoBuilt = true;
+                _rowCache = new Dictionary<int, RowSample>();
+            }
+            if (_rowCache.TryGetValue(row, out var rs)) return rs;
+
+            var pts = new Vector3[SampleCount + 1];
+            var arc = new float[SampleCount + 1];
+            for (int i = 0; i <= SampleCount; i++) pts[i] = PosAlong(row, i / (float)SampleCount);
+            for (int i = 1; i <= SampleCount; i++) arc[i] = arc[i - 1] + Vector3.Distance(pts[i - 1], pts[i]);
+            rs = new RowSample { Pts = pts, Arc = arc, Total = arc[SampleCount] };
+            _rowCache[row] = rs;
+            return rs;
+        }
+
+        private float RowLength(int row) => GetRow(row).Total;
 
         /// <summary>
         /// Số cell hàng row. ArcLength: theo chiều dài cung (ra xa nhiều hơn).
@@ -397,19 +459,52 @@ namespace Wayfu.Lamkn
             if (c != a) b = c;
         }
 
+        // Prefix-sum số cell theo hàng: _rowStart[r] = tổng cell các hàng < r, _rowStart[Rows] = tổng cả grid.
+        // CellIndex/GetCell gốc cộng dồn ElementsInRow từ hàng 0 → O(row) MỖI cell, mà editor gọi cho từng
+        // cell mỗi frame → O(rows²) khi grid nhiều row (thủ phạm chính gây giật). Dựng 1 lần rồi tra O(1).
+        [NonSerialized] private int[] _rowStart;
+        [NonSerialized] private int _layoutKey;
+        [NonSerialized] private bool _layoutBuilt;
+
+        // Mọi thứ ảnh hưởng SỐ CELL mỗi hàng (khác GeometryKey vốn chỉ lo vị trí): thêm BlockWidth/Spacing/
+        // Columns/Layout/Rows. Lệch là dựng lại prefix-sum.
+        private int LayoutKey()
+        {
+            unchecked
+            {
+                int h = GeometryKey();
+                h = h * 31 + BlockWidth.GetHashCode();
+                h = h * 31 + Spacing.GetHashCode();
+                h = h * 31 + Columns;
+                h = h * 31 + (int)Layout;
+                h = h * 31 + Rows;
+                return h;
+            }
+        }
+
+        private void EnsureRowStart()
+        {
+            int k = LayoutKey();
+            if (_layoutBuilt && k == _layoutKey && _rowStart != null) return;
+            _layoutBuilt = true; _layoutKey = k;
+            int n = Mathf.Max(0, Rows);
+            _rowStart = new int[n + 1];
+            for (int r = 0; r < n; r++) _rowStart[r + 1] = _rowStart[r] + ElementsInRow(r);
+        }
+
         public int TotalCells()
         {
-            int t = 0;
-            for (int r = 0; r < Rows; r++) t += ElementsInRow(r);
-            return t;
+            EnsureRowStart();
+            return _rowStart[Mathf.Max(0, Rows)];
         }
 
         /// <summary>Index phẳng của cell (row, element) trong <see cref="Cells"/>.</summary>
         public int CellIndex(int row, int e)
         {
-            int idx = 0;
-            for (int r = 0; r < row; r++) idx += ElementsInRow(r);
-            return idx + e;
+            EnsureRowStart();
+            if (row < 0) return e;
+            if (row >= _rowStart.Length) return _rowStart[_rowStart.Length - 1] + e; // vượt Rows: kẹp cuối
+            return _rowStart[row] + e;
         }
 
         /// <summary>
@@ -439,19 +534,19 @@ namespace Wayfu.Lamkn
 
         private Vector3 PosByLength(int row, float targetLen, float totalLen)
         {
-            if (targetLen <= 0f) return PosAlong(row, 0f);
-            if (targetLen >= totalLen) return PosAlong(row, 1f);
-            float acc = 0f;
-            Vector3 prev = PosAlong(row, 0f);
-            for (int i = 1; i <= SampleCount; i++)
+            var rs = GetRow(row);
+            if (targetLen <= 0f) return rs.Pts[0];
+            if (targetLen >= rs.Total) return rs.Pts[SampleCount];
+
+            // Nhị phân trên arc-length đã cộng dồn sẵn thay cho quét tuyến tính + PosAlong 48 lần.
+            int lo = 0, hi = SampleCount;
+            while (lo < hi - 1)
             {
-                Vector3 p = PosAlong(row, i / (float)SampleCount);
-                float d = Vector3.Distance(prev, p);
-                if (acc + d >= targetLen)
-                    return Vector3.Lerp(prev, p, d > 1e-4f ? (targetLen - acc) / d : 0f);
-                acc += d; prev = p;
+                int mid = (lo + hi) >> 1;
+                if (rs.Arc[mid] <= targetLen) lo = mid; else hi = mid;
             }
-            return PosAlong(row, 1f);
+            float d = rs.Arc[hi] - rs.Arc[lo];
+            return Vector3.Lerp(rs.Pts[lo], rs.Pts[hi], d > 1e-4f ? (targetLen - rs.Arc[lo]) / d : 0f);
         }
 
         public BlockCellData GetCell(int row, int e)
@@ -507,9 +602,10 @@ namespace Wayfu.Lamkn
         [Tooltip("Số block xếp chồng trong cell (~ BlockStackCt). 0 = ô LỖ: không dựng cell, và không cell " +
                  "nào được dồn/refill vào đó — grid giữ nguyên hình, chỉ thủng đúng ô này.")]
         [Min(0)] public int BlockStackCt = 3;
-        [Tooltip("Normal = phá xong biến mất. Spawner = còn hàng đợi phía sau, phá xong thì đẩy cell kế ra.")]
+        [Tooltip("Normal = phá xong biến mất. Spawner = còn hàng đợi phía sau, phá xong thì đẩy cell kế ra. " +
+                 "Spawner8 = như Spawner nhưng nhả thêm vào ô trống ở 8 ô xung quanh (4 dọc/ngang + 4 chéo).")]
         public BlockCellType Type = BlockCellType.Normal;
-        [Tooltip("CHỈ dùng cho Spawner: các cell PHÍA SAU, đẩy ra lần lượt khi cell hiện tại bị phá hết.")]
+        [Tooltip("CHỈ dùng cho Spawner/Spawner8: các cell PHÍA SAU, đẩy ra lần lượt khi có ô trống để nhả.")]
         public List<PendingBlockData> Queue = new List<PendingBlockData>();
         [Tooltip("Hướng dồn/spawn của cell trên sàn ngang XZ, tính bằng độ quanh trục Y (0° = +Z).")]
         public float SpawnerDirectionAngleZ;

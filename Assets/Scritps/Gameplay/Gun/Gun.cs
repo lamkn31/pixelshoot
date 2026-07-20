@@ -63,6 +63,8 @@ namespace Wayfu.Lamkn
             public float IdleTimer;   // quạt trống liên tục bao lâu rồi
             public bool FiredAtTarget; // đã nổ ÍT NHẤT 1 phát vào target hiện tại chưa — phân biệt cell
                                        // "bắn dở" (phải bắn hết) với cell mới chỉ CHỐT (qua vòng là bỏ)
+            public bool MultiSide;    // target hiện/vừa rồi thuộc grid bị path bao nhiều mặt → gun đang đi
+                                      // vòng quanh nó, KHÔNG tự khoá "1 lượt/vòng" mà bắt tiếp mặt kế
         }
 
         private readonly Barrel _right = new Barrel { Sign = 1f };
@@ -242,18 +244,26 @@ namespace Wayfu.Lamkn
                     b.Target = cand;
                     b.TargetGen = cand != null ? cand.Generation : 0;
                     justAcquired = cand != null;
+                    if (cand != null) b.MultiSide = cand.MultiSideGrid;
 
                     // sawCell (không phải b.Target): nòng nhường đạn vẫn coi như "còn thấy grid" → không
                     // tính là hết lượt, để khi nòng kia bắn xong và đạn rảnh ra thì nó vào cuộc được ngay.
                     if (sawCell) { b.HadTarget = true; b.IdleTimer = 0f; }
                     else if (b.HadTarget)
                     {
-                        // Đã bắn xong cell của mình mà quạt không còn gì để chốt tiếp → nòng đã đi qua
-                        // grid. HẾT LƯỢT: khoá tới hết vòng — không bắn, không target vào đâu nữa. Khoá
-                        // theo TỪNG NÒNG chứ không theo cả gun. Chờ targetLostGrace mới khoá: cột đang
-                        // dồn thì cell nào cũng PendingEntry, quạt trống trong chốc lát là bình thường.
-                        b.IdleTimer += Time.deltaTime;
-                        if (b.IdleTimer >= targetLostGrace) b.Armed = false;
+                        // Grid bị path bao nhiều mặt: gun đi VÒNG QUANH nó, mỗi lúc đối 1 mặt. Quạt trống
+                        // giữa 2 mặt KHÔNG phải "đã đi qua grid" → đừng khoá; reset để bắt mặt kế tiếp khi
+                        // gun vòng tới (chỉ bắn mặt đang đối diện, không xuyên qua bắn mặt sau — lọc trong
+                        // IsShootableFromGun). Grid thường (1 mặt) vẫn giữ luật 1 lượt/vòng như cũ.
+                        if (b.MultiSide) { b.HadTarget = false; b.IdleTimer = 0f; b.MultiSide = false; }
+                        else
+                        {
+                            // Đã bắn xong cell của mình mà quạt không còn gì để chốt tiếp → nòng đã đi qua
+                            // grid. HẾT LƯỢT: khoá tới hết vòng. Chờ targetLostGrace mới khoá: cột đang dồn
+                            // thì cell nào cũng PendingEntry, quạt trống trong chốc lát là bình thường.
+                            b.IdleTimer += Time.deltaTime;
+                            if (b.IdleTimer >= targetLostGrace) b.Armed = false;
+                        }
                     }
                 }
             }
@@ -278,6 +288,7 @@ namespace Wayfu.Lamkn
             b.HadTarget = false;
             b.IdleTimer = 0f;
             b.FiredAtTarget = false;
+            b.MultiSide = false;
         }
 
         /// <summary>

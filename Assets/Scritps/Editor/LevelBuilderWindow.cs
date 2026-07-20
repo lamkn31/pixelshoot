@@ -29,6 +29,8 @@ namespace Wayfu.Lamkn
 
         private Vector2 _leftScroll, _rightScroll;
         private bool _showPath = true, _showSlots = true, _showBlocks = true, _showFrame = true, _showRange = true, _showDir = true;
+        // Thanh cạnh: xanh = cạnh grid bắn được (ShootableEdges), đỏ = mặt chặn.
+        private bool _showEdges = true;
         // Ghost hàng đợi của cell Spawner — tắt cho đỡ rối khi không sửa spawner.
         private bool _showQueue = true;
 
@@ -61,6 +63,10 @@ namespace Wayfu.Lamkn
 
         // Màu tô cell bằng click trong khung giữa. None → click để CHỌN xem/sửa thông số.
         private TypeColor _paintColor = TypeColor.None;
+
+        // Erase: click/rê chuột vào block là XOÁ ngay (stack = 0 → lỗ), khỏi phải chọn rồi bấm Delete.
+        // Loại trừ lẫn nhau với tô màu (bật Erase thì _paintColor về None).
+        private bool _eraseMode;
 
         // Brush tô màu: giữ chuột rê qua nhiều cell thay vì chấm từng ô.
         private bool _painting;
@@ -238,6 +244,9 @@ namespace Wayfu.Lamkn
             _showSlots = GUILayout.Toggle(_showSlots, "Slots", EditorStyles.toolbarButton);
             _showBlocks = GUILayout.Toggle(_showBlocks, "Grids", EditorStyles.toolbarButton);
             _showDir = GUILayout.Toggle(_showDir, "Dir", EditorStyles.toolbarButton);
+            _showEdges = GUILayout.Toggle(_showEdges, new GUIContent("Edges",
+                "Vẽ thanh quanh grid cho biết mặt nào gun bắn được (Shootable Edges). Xanh = bắn được, " +
+                "đỏ = mặt chặn. Grid mặc định (None) chỉ hiện xanh ở mặt Front (hàng 0)."), EditorStyles.toolbarButton);
             _showQueue = GUILayout.Toggle(_showQueue, new GUIContent("Queue",
                 "Hiện các cell hàng đợi nằm SAU cell Spawner (ô mờ + ô \"+\"). Tắt cho đỡ rối khi không sửa spawner — " +
                 "tắt rồi thì click cũng không còn trúng chúng nữa."), EditorStyles.toolbarButton);
@@ -632,6 +641,9 @@ namespace Wayfu.Lamkn
                         Line(Proj(grid.CellPos(0, grid.ElementsInRow(0) - 1)), Proj(grid.CellPos(last, 0)));
                     }
 
+                    // Thanh cạnh: cho biết các HƯỚNG bắn được của grid (ShootableEdges).
+                    if (_showEdges) DrawGridEdges(grid, last, area, Proj, Front);
+
                     for (int r = 0; r < grid.Rows; r++)
                     {
                         int count = grid.ElementsInRow(r);
@@ -658,7 +670,7 @@ namespace Wayfu.Lamkn
                                     IsCellSelected(gi, flatIdx) ? Color.yellow : new Color(1f, 1f, 1f, 0.4f), area);
                                 continue;
                             }
-                            bool isSpawner = cell.Type == BlockCellType.Spawner;
+                            bool isSpawner = cell.Type.IsSpawner();
                             FillRect(cellRect, GlobalConfigManager.ColorOf(cell.Color));
                             // Viền vàng = cell đang chọn; viền cam = cell Spawner (còn hàng đợi phía sau).
                             if (IsCellSelected(gi, flatIdx)) DrawOutline(cellRect, Color.yellow, area);
@@ -675,16 +687,33 @@ namespace Wayfu.Lamkn
                             if (_showDir)
                             {
                                 bool autoDir = grid.CellAngleFromShape;
-                                Vector3 dirV = autoDir
-                                    ? Quaternion.Euler(0f, grid.DefaultCellAngle(r, e), 0f) * Vector3.forward
-                                    : cell.DirectionVector;
-                                Vector3 tipW = wp + dirV * (isSpawner ? 0.95f : 0.55f);
-                                if (Front(tipW))
+                                float baseAng = autoDir ? grid.DefaultCellAngle(r, e)
+                                                        : cell.SpawnerDirectionAngleZ;
+                                if (cell.Type == BlockCellType.Spawner8)
                                 {
-                                    Vector2 tip = Proj(tipW);
-                                    Handles.color = isSpawner ? SpawnerCol : new Color(1f, 1f, 1f, 0.9f);
-                                    Line(bp, tip); ArrowHead(bp, tip);
-                                    if (!autoDir) CellRotateHandle(gi, grid.CellIndex(r, e), wp, tip, area);
+                                    // Spawner8: 8 mũi tên ngắn toả đều (4 dọc/ngang + 4 chéo) — nhả ra
+                                    // mọi ô trống xung quanh nên không có "1 hướng" để kéo xoay.
+                                    Handles.color = SpawnerCol;
+                                    for (int k = 0; k < 8; k++)
+                                    {
+                                        Vector3 v8 = Quaternion.Euler(0f, baseAng + k * 45f, 0f) * Vector3.forward;
+                                        Vector3 tip8 = wp + v8 * 0.6f;
+                                        if (!Front(tip8)) continue;
+                                        Vector2 t8 = Proj(tip8);
+                                        Line(bp, t8); ArrowHead(bp, t8);
+                                    }
+                                }
+                                else
+                                {
+                                    Vector3 dirV = Quaternion.Euler(0f, baseAng, 0f) * Vector3.forward;
+                                    Vector3 tipW = wp + dirV * (isSpawner ? 0.95f : 0.55f);
+                                    if (Front(tipW))
+                                    {
+                                        Vector2 tip = Proj(tipW);
+                                        Handles.color = isSpawner ? SpawnerCol : new Color(1f, 1f, 1f, 0.9f);
+                                        Line(bp, tip); ArrowHead(bp, tip);
+                                        if (!autoDir) CellRotateHandle(gi, grid.CellIndex(r, e), wp, tip, area);
+                                    }
                                 }
                             }
                         }
@@ -701,7 +730,7 @@ namespace Wayfu.Lamkn
                             for (int e = 0; e < count; e++)
                             {
                                 var cell = grid.GetCell(r, e);
-                                if (cell == null || cell.BlockStackCt <= 0 || cell.Type != BlockCellType.Spawner) continue;
+                                if (cell == null || cell.BlockStackCt <= 0 || !cell.Type.IsSpawner()) continue;
                                 Vector3 wp = grid.CellPos(r, e);
                                 if (!Front(wp)) continue;
                                 DrawQueueGhosts(gi, grid, r, e, count, wp, grid.CellIndex(r, e), cell, area,
@@ -782,7 +811,7 @@ namespace Wayfu.Lamkn
         // Giữ Ctrl (hoặc Cmd) = chọn THÊM (click lại vào cell đã chọn thì bỏ chọn).
         private void HandleMarquee(Rect area)
         {
-            if (_paintColor != TypeColor.None) return; // đang tô màu → không quét chọn
+            if (_paintColor != TypeColor.None || _eraseMode) return; // đang tô màu / xoá → không quét chọn
             var e = Event.current;
             switch (e.type)
             {
@@ -934,6 +963,96 @@ namespace Wayfu.Lamkn
             }
         }
 
+        /// <summary>
+        /// Vẽ thanh dày quanh grid cho biết mặt nào bắn được (khớp <see cref="GridBlockManager"/> IsShootable):
+        /// XANH = cạnh bắn được, ĐỎ = mặt chặn. Grid mặc định (ShootableEdges = None) chỉ hiện xanh ở mặt
+        /// Front (hàng 0) như hành vi cũ. Cạnh vẽ theo TÂM cell nên bám cả Arc/Spline cong.
+        /// </summary>
+        private void DrawGridEdges(BlockGridData grid, int last, Rect area,
+            System.Func<Vector3, Vector2> Proj, System.Func<Vector3, bool> Front)
+        {
+            var edges = grid.ShootableEdges;
+            bool legacy = edges == GridEdges.None;
+            bool front = legacy || (edges & GridEdges.Front) != 0;
+            bool back  = !legacy && (edges & GridEdges.Back)  != 0;
+            bool left  = !legacy && (edges & GridEdges.Left)  != 0;
+            bool right = !legacy && (edges & GridEdges.Right) != 0;
+
+            Vector3 fwd = grid.Forward; fwd.y = 0f;
+            fwd = fwd.sqrMagnitude < 1e-6f ? Vector3.forward : fwd.normalized;
+            Vector3 rgt = Vector3.Cross(Vector3.up, fwd); // local +X trên sàn
+            float off = Mathf.Max(0.2f, (grid.BlockWidth + grid.Spacing) * 0.5f);
+
+            var rowFront = EdgeRow(grid, 0);
+            var rowBack  = EdgeRow(grid, last);
+            var colLeft  = EdgeCol(grid, false);
+            var colRight = EdgeCol(grid, true);
+
+            // Đỏ (mặt chặn) trước — chỉ multi-side; grid mặc định không vẽ đỏ cho đỡ rối. Tiếp tuyến để
+            // dựng đoạn ngắn khi cạnh chỉ 1 cell: hàng (Front/Back) trải theo rgt, cột (Left/Right) theo fwd.
+            if (!legacy)
+            {
+                if (!front) DrawEdgeBar(rowFront, -fwd, rgt, off, true, area, Proj, Front);
+                if (!back)  DrawEdgeBar(rowBack,   fwd, rgt, off, true, area, Proj, Front);
+                if (!left)  DrawEdgeBar(colLeft,  -rgt, fwd, off, true, area, Proj, Front);
+                if (!right) DrawEdgeBar(colRight,  rgt, fwd, off, true, area, Proj, Front);
+            }
+            // Xanh (bắn được) sau — nổi trên đỏ ở chỗ chồng (vd strip rộng 1 cell: Left/Right trùng nhau).
+            if (front) DrawEdgeBar(rowFront, -fwd, rgt, off, false, area, Proj, Front);
+            if (back)  DrawEdgeBar(rowBack,   fwd, rgt, off, false, area, Proj, Front);
+            if (left)  DrawEdgeBar(colLeft,  -rgt, fwd, off, false, area, Proj, Front);
+            if (right) DrawEdgeBar(colRight,  rgt, fwd, off, false, area, Proj, Front);
+        }
+
+        // Điểm tâm cell dọc HÀNG row (mặt Front/Back).
+        private static Vector3[] EdgeRow(BlockGridData g, int row)
+        {
+            int n = Mathf.Max(1, g.ElementsInRow(row));
+            var pts = new Vector3[n];
+            for (int e = 0; e < n; e++) pts[e] = g.CellPos(row, e);
+            return pts;
+        }
+
+        // Điểm tâm cell dọc CỘT mép (mặt Left = index 0, Right = index cuối) qua mọi hàng.
+        private static Vector3[] EdgeCol(BlockGridData g, bool lastIndex)
+        {
+            int rows = Mathf.Max(1, g.Rows);
+            var pts = new Vector3[rows];
+            for (int r = 0; r < rows; r++)
+            {
+                int n = g.ElementsInRow(r);
+                pts[r] = g.CellPos(r, lastIndex ? n - 1 : 0);
+            }
+            return pts;
+        }
+
+        private void DrawEdgeBar(Vector3[] world, Vector3 outward, Vector3 tangent, float off, bool blocked,
+            Rect area, System.Func<Vector3, Vector2> Proj, System.Func<Vector3, bool> Front)
+        {
+            if (world == null || world.Length == 0) return;
+            Handles.color = blocked ? new Color(1f, 0.32f, 0.30f, 0.6f) : new Color(0.35f, 1f, 0.45f, 0.95f);
+            float w = blocked ? 3f : 6f;
+
+            // Cạnh chỉ 1 cell → dựng đoạn ngắn dọc tiếp tuyến cho nhìn thấy được.
+            if (world.Length == 1)
+            {
+                Vector3 p = world[0] + outward * off;
+                if (Front(p)) DrawThick(Proj(p - tangent * off), Proj(p + tangent * off), w, area);
+                return;
+            }
+            for (int i = 0; i + 1 < world.Length; i++)
+            {
+                Vector3 a = world[i] + outward * off, b = world[i + 1] + outward * off;
+                if (Front(a) && Front(b)) DrawThick(Proj(a), Proj(b), w, area);
+            }
+        }
+
+        private void DrawThick(Vector2 a, Vector2 b, float w, Rect area)
+        {
+            if (ClipSegment(ref a, ref b, area))
+                Handles.DrawAAPolyLine(w, new Vector3(a.x, a.y, 0f), new Vector3(b.x, b.y, 0f));
+        }
+
         private void GridHandle(int gi, int hid, Vector2 p, Rect area)
         {
             if (!area.Contains(p)) return;
@@ -1083,7 +1202,7 @@ namespace Wayfu.Lamkn
         {
             var e = Event.current;
             if (e.type == EventType.MouseUp) _painting = false;
-            if (_paintColor == TypeColor.None) return;
+            if (_paintColor == TypeColor.None && !_eraseMode) return;
 
             bool start = e.type == EventType.MouseDown && e.button == 0 && !e.alt && area.Contains(e.mousePosition);
             bool cont = e.type == EventType.MouseDrag && _painting;
@@ -1104,10 +1223,18 @@ namespace Wayfu.Lamkn
                 var cells = grids.GetArrayElementAtIndex(h.grid).FindPropertyRelative("Cells");
                 if (h.flat < 0 || h.flat >= cells.arraySize) continue;
                 var cp = cells.GetArrayElementAtIndex(h.flat);
-                cp.FindPropertyRelative("Color").enumValueIndex = (int)_paintColor;
-                // Tô vào ô đã xoá (stack 0) = phục hồi cell với stack = Hole Capacity.
                 var stackP = cp.FindPropertyRelative("BlockStackCt");
-                if (stackP.intValue <= 0) stackP.intValue = Mathf.Max(1, _target.HoleCapacity);
+                if (_eraseMode)
+                {
+                    // Xoá = đặt stack 0 → thành LỖ vĩnh viễn (runtime không dựng, không cho dồn/refill vào).
+                    stackP.intValue = 0;
+                }
+                else
+                {
+                    cp.FindPropertyRelative("Color").enumValueIndex = (int)_paintColor;
+                    // Tô vào ô đã xoá (stack 0) = phục hồi cell với stack = Hole Capacity.
+                    if (stackP.intValue <= 0) stackP.intValue = Mathf.Max(1, _target.HoleCapacity);
+                }
                 hit = true;
             }
             if (hit || start) { e.Use(); Repaint(); }
@@ -1440,17 +1567,32 @@ namespace Wayfu.Lamkn
 
         private void ApplyToSelected(string propName, int value)
         {
+            // Color/BlockStackCt có trên CẢ PendingBlockData của hàng đợi → áp luôn cho các cell queue phía
+            // sau spawner (trước đây chỉ đổi cell mặt ngoài, hàng đợi giữ màu/stack cũ). Type chỉ có ở cell
+            // thật, không lan xuống queue.
+            bool alsoQueue = propName == "Color" || propName == "BlockStackCt";
             var grids = _so.FindProperty("Grids");
             foreach (var (gi, ci) in _selCells)
             {
                 if (gi < 0 || gi >= grids.arraySize) continue;
                 var cells = grids.GetArrayElementAtIndex(gi).FindPropertyRelative("Cells");
                 if (ci < 0 || ci >= cells.arraySize) continue;
-                var p = cells.GetArrayElementAtIndex(ci).FindPropertyRelative(propName);
-                if (p == null) continue;
-                if (p.propertyType == SerializedPropertyType.Enum) p.enumValueIndex = value;
-                else p.intValue = value;
+                var cell = cells.GetArrayElementAtIndex(ci);
+                SetIntOrEnum(cell.FindPropertyRelative(propName), value);
+                if (!alsoQueue) continue;
+
+                var q = cell.FindPropertyRelative("Queue");
+                if (q == null) continue;
+                for (int i = 0; i < q.arraySize; i++)
+                    SetIntOrEnum(q.GetArrayElementAtIndex(i).FindPropertyRelative(propName), value);
             }
+        }
+
+        private static void SetIntOrEnum(SerializedProperty p, int value)
+        {
+            if (p == null) return;
+            if (p.propertyType == SerializedPropertyType.Enum) p.enumValueIndex = value;
+            else p.intValue = value;
         }
 
         private void DrawSelectedGun()
@@ -1491,7 +1633,7 @@ namespace Wayfu.Lamkn
 
             var typeProp = c.FindPropertyRelative("Type");
             EditorGUILayout.PropertyField(typeProp, new GUIContent("Type"));
-            if (typeProp.enumValueIndex == (int)BlockCellType.Spawner) DrawCellQueue(c);
+            if (((BlockCellType)typeProp.enumValueIndex).IsSpawner()) DrawCellQueue(c);
             else EditorGUILayout.HelpBox("Normal: phá hết stack là cell biến mất.", MessageType.None);
             EditorGUILayout.EndVertical();
         }
@@ -1506,7 +1648,11 @@ namespace Wayfu.Lamkn
             for (int i = 0; i < q.arraySize; i++)
                 total += Mathf.Max(0, q.GetArrayElementAtIndex(i).FindPropertyRelative("BlockStackCt").intValue);
             EditorGUILayout.LabelField($"Cell phía sau — {q.arraySize} mục · ∑{total} block", EditorStyles.miniBoldLabel);
-            EditorGUILayout.HelpBox("Spawner: phá hết stack hiện tại → đẩy mục kế ra ĐÚNG vị trí này (đổi màu/stack). Hết hàng đợi mới biến mất. Block ở đây CÓ tính vào cân bằng bullet↔block.", MessageType.None);
+            bool eightWay = (BlockCellType)cell.FindPropertyRelative("Type").enumValueIndex == BlockCellType.Spawner8;
+            EditorGUILayout.HelpBox(eightWay
+                ? "Spawner8: ô gốc trống thì nhả như Spawner; NGOÀI RA còn nhả vào ô TRỐNG ở 8 ô xung quanh (4 dọc/ngang + 4 chéo). Block ở đây CÓ tính vào cân bằng bullet↔block."
+                : "Spawner: phá hết stack hiện tại → đẩy mục kế ra ĐÚNG vị trí này (đổi màu/stack). Hết hàng đợi mới biến mất. Block ở đây CÓ tính vào cân bằng bullet↔block.",
+                MessageType.None);
 
             int pend = -1; ListOp op = ListOp.None;
             for (int i = 0; i < q.arraySize; i++)
@@ -1656,8 +1802,12 @@ namespace Wayfu.Lamkn
                 EditorGUILayout.BeginVertical("box");
                 EditorGUILayout.BeginHorizontal();
                 int rows = grid.FindPropertyRelative("Rows").intValue;
-                int gridBlocks = SumStack(grid.FindPropertyRelative("Cells"));
-                int pendBlocks = SumStack(grid.FindPropertyRelative("PendingRefill"));
+                // Đọc THẲNG từ object thay vì duyệt SerializedProperty: nhãn foldout tính lại mỗi frame cho
+                // MỌI grid, mà GetArrayElementAtIndex/FindPropertyRelative đắt gấp bội đọc list thường →
+                // grid nhiều cell là giật khi repaint (kéo handle). Lệch 1 frame với data không sao (chỉ là nhãn).
+                var gdata = _target != null && _target.Grids != null && i < _target.Grids.Count ? _target.Grids[i] : null;
+                int gridBlocks = SumStackData(gdata?.Cells);
+                int pendBlocks = SumStackPending(gdata?.PendingRefill);
                 string blkTxt = pendBlocks > 0 ? $"{gridBlocks}(+{pendBlocks})" : gridBlocks.ToString();
                 bool openGrid = FoldAt(_foldGrid, i, $"Grid {i} — {rows} rows · {blkTxt} block");
                 var o = MiniButtons(i, grids.arraySize);
@@ -1673,6 +1823,10 @@ namespace Wayfu.Lamkn
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("Side"), new GUIContent("Side",
                     "Left/Right = chỉ nòng cùng bên của gun bắn được grid này. Any = theo quạt gun."));
                 EditorGUILayout.EndHorizontal();
+                EditorGUILayout.PropertyField(grid.FindPropertyRelative("ShootableEdges"), new GUIContent(
+                    "Shootable Edges",
+                    "Các CẠNH gun bắn được khi path bao quanh grid. None = mặc định cũ (chỉ mặt Front/hàng 0). " +
+                    "Bật Front/Back/Left/Right để phá từ nhiều phía; đặt Spawner8 ở giữa làm nguồn bất tử."));
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("Center"));
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("Rotation"),
                     new GUIContent("Rotation (Y°)", "Xoay cả grid quanh trục Y. Kéo handle XANH LÁ trong khung giữa."));
@@ -1859,19 +2013,24 @@ namespace Wayfu.Lamkn
             var cfg = GlobalConfigManager.Instance;
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("Paint Color", GUILayout.Width(72));
-            if (GUILayout.Toggle(_paintColor == TypeColor.None, "None", EditorStyles.miniButton, GUILayout.Width(44)))
-                _paintColor = TypeColor.None;
+            if (GUILayout.Toggle(_paintColor == TypeColor.None && !_eraseMode, "None", EditorStyles.miniButton, GUILayout.Width(44)))
+            { _paintColor = TypeColor.None; _eraseMode = false; }
 
             var bg = GUI.backgroundColor;
             if (cfg != null && cfg.listColor != null)
                 foreach (var co in cfg.listColor)
                 {
                     if (co == null || co.typeColor == TypeColor.None) continue;
-                    bool sel = _paintColor == co.typeColor;
+                    bool sel = _paintColor == co.typeColor && !_eraseMode;
                     GUI.backgroundColor = GlobalConfigManager.ColorOf(co.typeColor);
                     if (GUILayout.Toggle(sel, sel ? "●" : "", EditorStyles.miniButton, GUILayout.Width(24)) && !sel)
-                        _paintColor = co.typeColor;
+                    { _paintColor = co.typeColor; _eraseMode = false; }
                 }
+            GUI.backgroundColor = bg;
+            // Erase: bật lên thì click/rê vào block là xoá (thành lỗ). Tô màu và Erase loại trừ nhau.
+            GUI.backgroundColor = _eraseMode ? new Color(1f, 0.4f, 0.4f) : bg;
+            if (GUILayout.Toggle(_eraseMode, "Erase", EditorStyles.miniButton, GUILayout.Width(48)) != _eraseMode)
+            { _eraseMode = !_eraseMode; if (_eraseMode) _paintColor = TypeColor.None; }
             GUI.backgroundColor = bg;
             EditorGUILayout.EndHorizontal();
 
@@ -1880,7 +2039,9 @@ namespace Wayfu.Lamkn
                 EditorGUILayout.HelpBox("Không tìm thấy GlobalConfigManager → không có bảng màu.", MessageType.Warning);
                 return;
             }
-            EditorGUILayout.HelpBox(_paintColor == TypeColor.None
+            EditorGUILayout.HelpBox(_eraseMode
+                ? "Đang ERASE: click vào block để XOÁ (stack = 0 → lỗ), hoặc GIỮ CHUỘT RÊ qua nhiều block để xoá cả vùng. Tô màu vào lại để phục hồi."
+                : _paintColor == TypeColor.None
                 ? "Paint = None: click cell/gun để XEM & SỬA thông số (không đổi màu) · kéo chuột = quét chọn nhiều cell."
                 : $"Đang tô màu {_paintColor} — click, hoặc GIỮ CHUỘT RÊ qua nhiều cell để tô cả vùng. "
                   + "Ô đã XOÁ hiện dạng khung mờ; tô vào đó sẽ PHỤC HỒI cell (stack = Hole Capacity).\n"
@@ -2022,15 +2183,20 @@ namespace Wayfu.Lamkn
         private static int AddArray(SerializedProperty arr) { int idx = arr.arraySize; arr.arraySize++; return idx; }
 
         // Tổng BlockStackCt của 1 mảng phần tử (Cells hoặc PendingRefill — đều có field BlockStackCt).
-        private static int SumStack(SerializedProperty arr)
+        // Đọc thẳng object (nhanh hơn nhiều SerializedProperty) cho nhãn foldout tính mỗi frame.
+        private static int SumStackData(List<BlockCellData> cells)
         {
-            if (arr == null) return 0;
+            if (cells == null) return 0;
             int s = 0;
-            for (int i = 0; i < arr.arraySize; i++)
-            {
-                var p = arr.GetArrayElementAtIndex(i).FindPropertyRelative("BlockStackCt");
-                if (p != null) s += Mathf.Max(0, p.intValue);
-            }
+            foreach (var c in cells) if (c != null) s += Mathf.Max(0, c.BlockStackCt);
+            return s;
+        }
+
+        private static int SumStackPending(List<PendingBlockData> pend)
+        {
+            if (pend == null) return 0;
+            int s = 0;
+            foreach (var p in pend) if (p != null) s += Mathf.Max(0, p.BlockStackCt);
             return s;
         }
 
