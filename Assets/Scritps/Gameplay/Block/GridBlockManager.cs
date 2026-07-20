@@ -11,8 +11,9 @@ namespace Wayfu.Lamkn
     /// </summary>
     public class GridBlockManager : Singleton<GridBlockManager>
     {
-        // Tốc độ dồn hàng lấy từ GameSettings (config chung), nạp lại mỗi lần Build.
+        // Config lấy từ GameSettings, nạp lại mỗi lần Build.
         private float _collapseDuration = 0.25f;
+        private bool _frontRowFirst; // CoreType = FrontRowFirst → ưu tiên cell hàng 0 hơn cell sập xuống
 
         // Nguồn Spawner: 1 Ô CỐ ĐỊNH trên lưới. Cell ở đó dồn lên như cell thường; hễ ô trống là nhả mục kế
         // trong hàng đợi ẩn ra đúng ô đó — lặp tới khi cạn.
@@ -49,6 +50,7 @@ namespace Wayfu.Lamkn
             var gs = GameSettings.Instance;
             float globalSpacing = gs != null ? gs.BlockStackSpacing : 0.5f;
             _collapseDuration = gs != null ? gs.BlockCollapseDuration : 0.25f;
+            _frontRowFirst = gs != null && gs.CoreType == CoreGameType.FrontRowFirst;
 
             foreach (var grid in level.Grids)
             {
@@ -158,10 +160,11 @@ namespace Wayfu.Lamkn
         /// Chọn cell cùng màu để bắn, trong số các cell KHÔNG BỊ CHẶN và nằm trong
         /// <paramref name="detectRange"/> (vòng phát hiện, tròn trên sàn XZ). Xét MỌI grid — gun chạy giữa
         /// 2 grid sẽ ăn được cả hai bên.
-        /// <para>Thứ tự ưu tiên: cell GẦN gun nhất theo VỊ TRÍ (khoảng cách XZ). Cell front luôn gần hơn
-        /// cell sâu, nên gun ăn từ gần ra xa — đúng cho cả Arc/Rect lẫn Spline (grid uốn lượn, mỗi hàng số
-        /// cell khác nhau nên "cột" không thẳng, không thể ưu tiên theo row). Lọc gần nhất còn bền với sai
-        /// số của IsShootable: cell sâu có lỡ hở nhầm thì vẫn ở xa nên không bị chọn thay cell front.</para>
+        /// <para>Thứ tự ưu tiên theo <see cref="GameSettings.CoreType"/>: NearestCell = cell GẦN gun nhất
+        /// (khoảng cách XZ) — ăn từ gần ra xa, bền với sai số IsShootable (cell sâu lỡ hở vẫn ở xa nên
+        /// không bị chọn). FrontRowFirst = cell có Depth GỐC nhỏ thắng trước (Depth 0 = sinh ở hàng 0, chưa
+        /// bị bắn), cùng Depth mới xét gần nhất → cell front gốc luôn hơn cell sập xuống (Depth ≥1) dù cell
+        /// sập đã dồn ra ngang hàng 0 và ở gần hơn.</para>
         /// <para>Bộ lọc range+góc ở đây phải khớp Gun.InDetectZone: Gun gọi lại mỗi frame để buông target
         /// khi quạt đã trôi qua, hai bên lệch nhau thì target vừa chọn xong đã bị loại ngay frame sau.</para>
         /// </summary>
@@ -176,6 +179,7 @@ namespace Wayfu.Lamkn
                                         float detectRange, float spreadAngle, BlockCell exclude = null)
         {
             BlockCell best = null;
+            int bestDepth = int.MaxValue;   // chỉ dùng khi _frontRowFirst; theo Depth GỐC, không phải row runtime
             float bestSqr = float.MaxValue;
             float detectSqr = detectRange * detectRange;
 
@@ -220,7 +224,15 @@ namespace Wayfu.Lamkn
                             if (!sideLocked && Vector3.Dot(sideVec, d) * sideSign < 0f) continue;
                             if (Vector3.Dot(forward, d) < cosSpread * Mathf.Sqrt(sqr)) continue;
                         }
-                        if (sqr < bestSqr) { bestSqr = sqr; best = cell; }
+                        // NearestCell: gần nhất thắng. FrontRowFirst: cell có Depth GỐC nhỏ thắng trước
+                        // (cell sinh ở hàng 0 = Depth 0, chưa bị bắn), cùng Depth mới xét gần nhất. Dùng
+                        // Depth chứ KHÔNG dùng row runtime: cell sập xuống dồn ra hàng 0 vẫn giữ Depth cũ
+                        // (≥1) nên luôn thua cell front gốc dù đã ngang hàng row 0 và ở gần hơn.
+                        int depth = cell.Depth;
+                        bool better = _frontRowFirst
+                            ? (depth < bestDepth || (depth == bestDepth && sqr < bestSqr))
+                            : (sqr < bestSqr);
+                        if (better) { bestDepth = depth; bestSqr = sqr; best = cell; }
                     }
                 }
             }

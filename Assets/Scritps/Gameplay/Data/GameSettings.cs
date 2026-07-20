@@ -9,6 +9,12 @@ namespace Wayfu.Lamkn
     [CreateAssetMenu(fileName = "GameSettings", menuName = "Wayfu/Game Settings")]
     public class GameSettings : ScriptableObject
     {
+        [Header("Core")]
+        [Tooltip("NearestCell = luôn bắn cell gần gun nhất (kể cả cell vừa sập xuống ở gần).\n" +
+                 "FrontRowFirst = nếu còn cell chưa bắn ở HÀNG 0 (sát path) trong range thì ưu tiên nó hơn " +
+                 "cell đã sập xuống, dù cell sập ở gần hơn.")]
+        public CoreGameType CoreType = CoreGameType.NearestCell;
+
         [Header("Slot")]
         [Tooltip("Spacing DÙNG CHUNG giữa các gun trong slot (theo trục Z).")]
         public float SlotGunSpacing = 1f;

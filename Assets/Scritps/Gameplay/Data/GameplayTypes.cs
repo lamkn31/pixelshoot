@@ -113,6 +113,15 @@ namespace Wayfu.Lamkn
     public enum GridSide { Any, Left, Right }
 
     /// <summary>
+    /// Kiểu ưu tiên chọn target của gun.
+    /// <para><b>NearestCell</b>: luôn bắn cell GẦN gun nhất trong số cell bắn được — kể cả cell vừa sập
+    /// xuống (hàng sâu tiến ra) đang ở gần.</para>
+    /// <para><b>FrontRowFirst</b>: ưu tiên cell ở HÀNG 0 (sát path, chưa bị bắn) hơn cell đã sập xuống,
+    /// dù cell sập ở gần hơn. Chỉ khi hết cell hàng 0 trong range mới ăn tới cell hàng sâu.</para>
+    /// </summary>
+    public enum CoreGameType { NearestCell, FrontRowFirst }
+
+    /// <summary>
     /// 1 grid xếp block trên sàn XZ. Row 0 = ngoài cùng, gần path (gun ăn từ row 0 vào trong).
     /// <para><b>Shape = Arc</b>: vòng cung (fan). Mỗi hàng là 1 cung bán kính BaseRadius + row*RowSpacing,
     /// dãn đều trong góc mở ArcAngle. Số cell mỗi hàng theo <see cref="Layout"/>: ArcLength = chiều dài cung

@@ -429,7 +429,7 @@ namespace Wayfu.Lamkn
             }
             if (_gsSO == null || _gsSO.targetObject != gs) _gsSO = new SerializedObject(gs);
             _gsSO.Update();
-            foreach (var name in new[] { "SlotGunSpacing", "MaxGunOnPath", "GunSpeed", "GunSpacing",
+            foreach (var name in new[] { "CoreType", "SlotGunSpacing", "MaxGunOnPath", "GunSpeed", "GunSpacing",
                 "FireInterval", "FireMode", "BurstSpawnStacked", "BurstRowLead", "GunFireRange",
                 "GunFireAngle", "FrontStationDistance", "BulletSpeed", "BlockStackSpacing",
                 "BlockCollapseDuration" })
@@ -638,7 +638,10 @@ namespace Wayfu.Lamkn
                         for (int e = 0; e < count; e++)
                         {
                             var cell = grid.GetCell(r, e);
-                            if (cell == null || cell.BlockStackCt <= 0) continue;
+                            if (cell == null) continue;
+                            bool empty = cell.BlockStackCt <= 0;
+                            // Ô đã XOÁ (stack 0): chỉ hiện khi đang tô màu, để click phục hồi + đổi màu.
+                            if (empty && _paintColor == TypeColor.None) continue;
                             Vector3 wp = grid.CellPos(r, e);
                             if (!Front(wp)) continue;
                             // Kích thước vẽ = kích thước THẬT của block (prefab 1x1 × CellScale của grid).
@@ -646,9 +649,17 @@ namespace Wayfu.Lamkn
                             float sz = PixSize(wp, Mathf.Max(0.05f, grid.CellScale.x));
                             var cellRect = new Rect(bp.x - sz / 2, bp.y - sz / 2, sz, sz);
                             int flatIdx = grid.CellIndex(r, e);
+                            _hitCells.Add((cellRect, gi, flatIdx));
+                            if (empty)
+                            {
+                                // Ghost ô trống: fill rất mờ + viền, click (tô màu) sẽ phục hồi stack.
+                                FillRect(cellRect, new Color(1f, 1f, 1f, 0.06f));
+                                DrawOutline(cellRect,
+                                    IsCellSelected(gi, flatIdx) ? Color.yellow : new Color(1f, 1f, 1f, 0.4f), area);
+                                continue;
+                            }
                             bool isSpawner = cell.Type == BlockCellType.Spawner;
                             FillRect(cellRect, GlobalConfigManager.ColorOf(cell.Color));
-                            _hitCells.Add((cellRect, gi, flatIdx));
                             // Viền vàng = cell đang chọn; viền cam = cell Spawner (còn hàng đợi phía sau).
                             if (IsCellSelected(gi, flatIdx)) DrawOutline(cellRect, Color.yellow, area);
                             else if (isSpawner) DrawOutline(cellRect, SpawnerCol, area);
@@ -1092,7 +1103,11 @@ namespace Wayfu.Lamkn
                 if (h.grid < 0 || h.grid >= grids.arraySize) continue;
                 var cells = grids.GetArrayElementAtIndex(h.grid).FindPropertyRelative("Cells");
                 if (h.flat < 0 || h.flat >= cells.arraySize) continue;
-                cells.GetArrayElementAtIndex(h.flat).FindPropertyRelative("Color").enumValueIndex = (int)_paintColor;
+                var cp = cells.GetArrayElementAtIndex(h.flat);
+                cp.FindPropertyRelative("Color").enumValueIndex = (int)_paintColor;
+                // Tô vào ô đã xoá (stack 0) = phục hồi cell với stack = Hole Capacity.
+                var stackP = cp.FindPropertyRelative("BlockStackCt");
+                if (stackP.intValue <= 0) stackP.intValue = Mathf.Max(1, _target.HoleCapacity);
                 hit = true;
             }
             if (hit || start) { e.Use(); Repaint(); }
@@ -1851,7 +1866,8 @@ namespace Wayfu.Lamkn
             }
             EditorGUILayout.HelpBox(_paintColor == TypeColor.None
                 ? "Paint = None: click cell/gun để XEM & SỬA thông số (không đổi màu) · kéo chuột = quét chọn nhiều cell."
-                : $"Đang tô màu {_paintColor} — click, hoặc GIỮ CHUỘT RÊ qua nhiều cell để tô cả vùng.\n"
+                : $"Đang tô màu {_paintColor} — click, hoặc GIỮ CHUỘT RÊ qua nhiều cell để tô cả vùng. "
+                  + "Ô đã XOÁ hiện dạng khung mờ; tô vào đó sẽ PHỤC HỒI cell (stack = Hole Capacity).\n"
                   + (_showQueue
                       ? "Cell Spawner: các ô mờ phía sau = hàng đợi · click ô mờ để tô · click ô \"+\" cuối đuôi "
                         + "để thêm cell · CLICK PHẢI vào ô mờ để xoá. (Tắt nút Queue trên toolbar để ẩn.)"
