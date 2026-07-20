@@ -57,7 +57,7 @@ namespace Wayfu.Lamkn
         // Generate grid.
         private TypeColor _genColor = TypeColor.Red;
         private int _genStack = 3;
-        private BlockGridShape _genShape = BlockGridShape.Arc; // loại grid khi bấm "+ Grid"
+        private BlockGridShape _genShape = BlockGridShape.Spline; // loại grid khi bấm "+ Grid"
 
         // Màu tô cell bằng click trong khung giữa. None → click để CHỌN xem/sửa thông số.
         private TypeColor _paintColor = TypeColor.None;
@@ -1697,8 +1697,6 @@ namespace Wayfu.Lamkn
                 EditorGUILayout.EndHorizontal();
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("CellScale"),
                     new GUIContent("Cell Scale", "Scale của mọi BLOCK trong grid này."));
-                EditorGUILayout.PropertyField(grid.FindPropertyRelative("StackSpacing"),
-                    new GUIContent("Stack Spacing", "Khoảng cách block trong 1 stack (trục Y) riêng grid này. 0 = dùng GameSettings."));
                 if (!isRect) EditorGUILayout.PropertyField(grid.FindPropertyRelative("Layout"), new GUIContent("Layout"));
                 EditorGUILayout.HelpBox(DescribeLayout(i), MessageType.None);
 
@@ -1759,21 +1757,39 @@ namespace Wayfu.Lamkn
         {
             int idx = grids.arraySize; grids.arraySize++;
             var g = grids.GetArrayElementAtIndex(idx);
+            bool spline = _genShape == BlockGridShape.Spline;
+
             g.FindPropertyRelative("Shape").enumValueIndex = (int)_genShape;
             g.FindPropertyRelative("Center").vector3Value = Vector3.zero;
             g.FindPropertyRelative("Rotation").floatValue = 0f;
-            g.FindPropertyRelative("BaseRadius").floatValue = 3f;
-            g.FindPropertyRelative("RowSpacing").floatValue = 1.2f;
             g.FindPropertyRelative("Rows").intValue = 3;
             g.FindPropertyRelative("Columns").intValue = 5;
             g.FindPropertyRelative("ArcAngle").floatValue = 90f;
             g.FindPropertyRelative("SpiralGrowth").floatValue = 0f;
-            g.FindPropertyRelative("BlockWidth").floatValue = 0.8f;
-            g.FindPropertyRelative("Spacing").floatValue = 0.2f;
             g.FindPropertyRelative("CellScale").vector3Value = Vector3.one;
-            g.FindPropertyRelative("StackSpacing").floatValue = 0f; // 0 = theo GameSettings
             g.FindPropertyRelative("Layout").enumValueIndex = (int)BlockGridLayout.ArcLength;
             g.FindPropertyRelative("Cells").arraySize = 0;
+
+            // Default riêng cho Spline (dải uốn lượn) khác Arc/Rect.
+            g.FindPropertyRelative("BaseRadius").floatValue = spline ? 0f : 3f;      // Lệch Row 0
+            g.FindPropertyRelative("RowSpacing").floatValue = spline ? 1f : 1.2f;
+            g.FindPropertyRelative("BlockWidth").floatValue = spline ? 0f : 0.8f;
+            g.FindPropertyRelative("Spacing").floatValue = spline ? 0.8f : 0.2f;
+
+            var scr = g.FindPropertyRelative("SplineCornerRadius");
+            if (scr != null) scr.floatValue = 5f;
+
+            // Spline: sinh sẵn 2 waypoint để có 1 đoạn đường ngay.
+            var wp = g.FindPropertyRelative("SplineWaypoints");
+            if (wp != null)
+            {
+                wp.arraySize = spline ? 2 : 0;
+                if (spline)
+                {
+                    wp.GetArrayElementAtIndex(0).vector3Value = Vector3.zero;
+                    wp.GetArrayElementAtIndex(1).vector3Value = new Vector3(4f, 0f, 0f);
+                }
+            }
         }
 
         // Hàng đợi SPAWNER refill: mỗi mục = 1 stack (màu + số block) sẽ được nhả bù ở ring ngoài cùng

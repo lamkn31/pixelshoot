@@ -13,6 +13,7 @@ namespace Wayfu.Lamkn
     {
         // Config lấy từ GameSettings, nạp lại mỗi lần Build.
         private float _collapseDuration = 0.25f;
+        private float _stackSpacing = 0.5f;   // khoảng cách block trong stack (dùng chung, không theo grid)
         private bool _frontRowFirst; // CoreType = FrontRowFirst → ưu tiên cell hàng 0 hơn cell sập xuống
 
         // Nguồn Spawner: 1 Ô CỐ ĐỊNH trên lưới. Cell ở đó dồn lên như cell thường; hễ ô trống là nhả mục kế
@@ -37,7 +38,6 @@ namespace Wayfu.Lamkn
             public readonly List<SpawnerSource> Sources = new List<SpawnerSource>();
             public Transform Root;                 // node cha để gắn cell (kể cả cell refill)
             public Queue<PendingBlockData> Pending; // hàng đợi refill mức GRID (lấp hàng sâu nhất)
-            public float StackSpacing;
             public bool HasIndicators;             // còn mũi tên spawner nào cần dọn/gắn không
         }
 
@@ -48,7 +48,7 @@ namespace Wayfu.Lamkn
         {
             Clear();
             var gs = GameSettings.Instance;
-            float globalSpacing = gs != null ? gs.BlockStackSpacing : 0.5f;
+            _stackSpacing = gs != null ? gs.BlockStackSpacing : 0.5f;
             _collapseDuration = gs != null ? gs.BlockCollapseDuration : 0.25f;
             _frontRowFirst = gs != null && gs.CoreType == CoreGameType.FrontRowFirst;
 
@@ -62,8 +62,6 @@ namespace Wayfu.Lamkn
                 {
                     Data = grid,
                     Root = gridGo.transform,
-                    // StackSpacing riêng của grid; <= 0 thì rơi về config chung.
-                    StackSpacing = grid.StackSpacing > 0f ? grid.StackSpacing : globalSpacing,
                     Pending = BuildPendingQueue(grid),
                 };
 
@@ -122,7 +120,7 @@ namespace Wayfu.Lamkn
             cell.transform.rotation = Quaternion.Euler(0f, CellAngle(gr, data), 0f);
             // Cell chỉ là node chứa → giữ scale 1; CellScale của grid áp thẳng lên BLOCK bên trong.
             cell.transform.localScale = Vector3.one;
-            cell.Build(data, gr.StackSpacing, gr.Data.CellScale, this);
+            cell.Build(data, _stackSpacing, gr.Data.CellScale, this);
             return cell;
         }
 
