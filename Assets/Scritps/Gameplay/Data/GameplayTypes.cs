@@ -653,12 +653,18 @@ namespace Wayfu.Lamkn
         public Vector3 PropScale = Vector3.one;
     }
 
-    /// <summary>Obstacle gắn lên cell (~ BlockObstacleData, bản rút gọn — chưa mô phỏng runtime).</summary>
+    /// <summary>Obstacle đặt trên board: 1 model 3D có vị trí/xoay/scale riêng, spawn khi Play.</summary>
     [Serializable]
     public class BlockObstacleData
     {
         public BlockObstacleType Type;
+        [Tooltip("Model 3D của obstacle. Kích thước MẶC ĐỊNH trên map = bounds của model này (Scale = 1).")]
+        public GameObject Prefab;
         public Vector3 Pos;
+        [Tooltip("Xoay quanh trục đứng (độ). Kéo handle XANH LÁ trên map.")]
+        public float RotationY;
+        [Tooltip("Nhân lên kích thước model. (1,1,1) = đúng kích thước gốc của model.")]
+        public Vector3 Scale = Vector3.one;
         [Tooltip("Index cell mà obstacle gắn vào (-1 = độc lập).")]
         public int TargetCellIndex = -1;
         [Min(1)] public int Strength = 1;

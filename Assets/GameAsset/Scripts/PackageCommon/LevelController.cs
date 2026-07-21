@@ -138,12 +138,14 @@ namespace Wayfu.Lamkn
             GridBlockManager.Instance.Build(_level);
             SlotManager.Instance.Build(_level);
             SpawnBoardProps(_level);
+            SpawnObstacles(_level);
             GameController.Instance.StartLevel(); // bàn chơi xong → GameController vào Playing + dựng HUD
         }
 
         public void Retry() => Build();
 
         private Transform _propsRoot;
+        private Transform _obstaclesRoot;
 
         private void ClearAll()
         {
@@ -151,6 +153,7 @@ namespace Wayfu.Lamkn
             GridBlockManager.Instance?.Clear();
             SlotManager.Instance?.Clear();
             if (_propsRoot != null) Destroy(_propsRoot.gameObject);
+            if (_obstaclesRoot != null) Destroy(_obstaclesRoot.gameObject);
         }
 
         private void SpawnBoardProps(LevelData level)
@@ -164,6 +167,21 @@ namespace Wayfu.Lamkn
                 var scale = p.PropScale == Vector3.zero ? Vector3.one : p.PropScale;
                 var go = Instantiate(p.PropPrefab, p.PropPos, rot, _propsRoot);
                 go.transform.localScale = scale;
+            }
+        }
+
+        // Obstacle: instantiate model tại Pos, xoay quanh Y theo RotationY, và NHÂN scale model với Scale
+        // của obstacle (Scale = 1 → giữ đúng kích thước gốc, khớp footprint vẽ trong Level Tool).
+        private void SpawnObstacles(LevelData level)
+        {
+            if (level.Obstacles == null || level.Obstacles.Count == 0) return;
+            _obstaclesRoot = new GameObject("Obstacles").transform;
+            foreach (var o in level.Obstacles)
+            {
+                if (o?.Prefab == null) continue;
+                var go = Instantiate(o.Prefab, o.Pos, Quaternion.Euler(0f, o.RotationY, 0f), _obstaclesRoot);
+                Vector3 s = o.Scale == Vector3.zero ? Vector3.one : o.Scale;
+                go.transform.localScale = Vector3.Scale(go.transform.localScale, s);
             }
         }
 

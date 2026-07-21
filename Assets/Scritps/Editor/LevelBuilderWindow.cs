@@ -35,6 +35,10 @@ namespace Wayfu.Lamkn
         private bool _showMove = false;
         // Ghost hàng đợi của cell Spawner — tắt cho đỡ rối khi không sửa spawner.
         private bool _showQueue = true;
+        // Obstacle: vẽ footprint + handle trên map.
+        private bool _showObstacles = true;
+        // Obstacle đang chọn để hiện thông số ở panel phải (-1 = không).
+        private int _selObstacle = -1;
 
         // Bề rộng 2 panel — kéo được.
         private float _leftW = 250f, _rightW = 360f;
@@ -58,6 +62,9 @@ namespace Wayfu.Lamkn
         private int _dragCellGrid = -1, _dragCellIndex = -1; // xoay hướng 1 cell
         private Vector3 _dragCellCenter;
         private int _dragSplineGrid = -1, _dragSplineWp = -1; // kéo waypoint của Spline grid
+        // Obstacle: kéo trên map. handle 0 = di chuyển (tâm), 1 = xoay (Y), 2 = scale (góc).
+        private int _dragObstacle = -1, _dragObHandle = -1;
+        private Vector3 _dragObStart;                 // Pos lúc bắt đầu kéo — để Shift khóa trục
 
         // Generate grid.
         private TypeColor _genColor = TypeColor.Red;
@@ -139,7 +146,7 @@ namespace Wayfu.Lamkn
         }
 
         // Foldout: thu gọn từng nhóm cho panel phải ngắn lại (chỉ GRIDS mở sẵn).
-        private bool _foldMeta, _foldPath, _foldPrefabs, _foldWaypoints, _foldSlots, _foldGrids = true;
+        private bool _foldMeta, _foldPath, _foldObstacles = true, _foldWaypoints, _foldSlots, _foldGrids = true;
         private readonly List<bool> _foldGrid = new List<bool>();   // theo từng grid
         private readonly List<bool> _foldSlot = new List<bool>();   // theo từng slot
 
@@ -208,7 +215,7 @@ namespace Wayfu.Lamkn
             TryLiveRebuild();
         }
 
-        private bool IsDragging => _dragGrid >= 0 || _dragWaypoint >= 0 || _dragCellGrid >= 0 || _painting || _panning;
+        private bool IsDragging => _dragGrid >= 0 || _dragWaypoint >= 0 || _dragCellGrid >= 0 || _dragObstacle >= 0 || _painting || _panning;
 
         /// <summary>
         /// Sửa grid/path/cell lúc đang Play → dựng lại level để thấy ngay vị trí THẬT trong runtime,
@@ -271,6 +278,9 @@ namespace Wayfu.Lamkn
             _showQueue = GUILayout.Toggle(_showQueue, new GUIContent("Queue",
                 "Hiện các cell hàng đợi nằm SAU cell Spawner (ô mờ + ô \"+\"). Tắt cho đỡ rối khi không sửa spawner — " +
                 "tắt rồi thì click cũng không còn trúng chúng nữa."), EditorStyles.toolbarButton);
+            _showObstacles = GUILayout.Toggle(_showObstacles, new GUIContent("Obstacles",
+                "Vẽ footprint + handle của obstacle trên map (di chuyển tâm hồng · xoay xanh lá · scale xanh dương)."),
+                EditorStyles.toolbarButton);
             _showFrame = GUILayout.Toggle(_showFrame, "Cam", EditorStyles.toolbarButton);
             _showRange = GUILayout.Toggle(_showRange, "Range", EditorStyles.toolbarButton);
             _liveSync = GUILayout.Toggle(_liveSync, new GUIContent("Live",
@@ -875,6 +885,9 @@ namespace Wayfu.Lamkn
                 }
             }
 
+            // Obstacle: vẽ footprint + handle TRƯỚC marquee để handle nuốt click trước khi quét chọn.
+            if (_showObstacles) DrawObstacles(area, Proj, Front, Line);
+
             // Cuối cùng: quét chọn / click chọn. Đặt sau mọi handle nên nếu handle đã e.Use() thì bỏ qua.
             HandleMarquee(area);
             HandleDeleteKey(area);
@@ -1215,6 +1228,183 @@ namespace Wayfu.Lamkn
             else if (e.type == EventType.MouseUp) { _dragGrid = -1; _dragHandle = -1; e.Use(); }
         }
 
+        private static readonly Color ObstacleCol = new Color(0.9f, 0.55f, 0.2f, 1f);
+
+        /// <summary>
+        /// Vẽ obstacle trên map: footprint hình chữ nhật = kích thước MODEL (bounds) × Scale, xoay quanh Y
+        /// theo RotationY. Kèm 3 handle kéo được: TÂM (hồng, di chuyển) · XOAY (xanh lá) · SCALE (xanh
+        /// dương, kéo góc). Footprint 1×1 khi chưa gán model.
+        /// </summary>
+        private void DrawObstacles(Rect area, System.Func<Vector3, Vector2> Proj, System.Func<Vector3, bool> Front,
+                                   System.Action<Vector2, Vector2> Line)
+        {
+            var obs = _target.Obstacles;
+            if (obs == null) return;
+            var lbl = new GUIStyle(EditorStyles.miniBoldLabel) { alignment = TextAnchor.MiddleCenter };
+            for (int i = 0; i < obs.Count; i++)
+            {
+                var o = obs[i];
+                if (o == null) continue;
+                Vector3 c = o.Pos; c.y = 0f;
+                if (!Front(c)) continue;
+
+                Vector3 fp = ModelFootprint(o.Prefab);
+                Vector3 sc = o.Scale == Vector3.zero ? Vector3.one : o.Scale;
+                float halfX = Mathf.Max(0.05f, fp.x * Mathf.Abs(sc.x)) * 0.5f;
+                float halfZ = Mathf.Max(0.05f, fp.z * Mathf.Abs(sc.z)) * 0.5f;
+                Quaternion rot = Quaternion.Euler(0f, o.RotationY, 0f);
+                Vector3 ax = rot * Vector3.right, az = rot * Vector3.forward;
+                Vector3 c0 = c - ax * halfX - az * halfZ, c1 = c + ax * halfX - az * halfZ;
+                Vector3 c2 = c + ax * halfX + az * halfZ, c3 = c - ax * halfX + az * halfZ;
+
+                bool sel = _selObstacle == i;
+                Handles.color = sel ? Color.yellow : ObstacleCol;
+                Line(Proj(c0), Proj(c1)); Line(Proj(c1), Proj(c2));
+                Line(Proj(c2), Proj(c3)); Line(Proj(c3), Proj(c0));
+
+                Vector2 cp = Proj(c);
+                if (area.Contains(cp))
+                {
+                    lbl.normal.textColor = sel ? Color.yellow : ObstacleCol;
+                    GUI.Label(new Rect(cp.x - 50, cp.y - 20, 100, 16),
+                              o.Prefab != null ? o.Prefab.name : $"Obstacle {i}", lbl);
+                }
+
+                // Handle xoay: ra ngoài theo +Z local, 1 bậc ngoài mép.
+                Vector3 rotW = c + az * (halfZ + 0.6f);
+                if (Front(rotW))
+                {
+                    Handles.color = new Color(0.3f, 1f, 0.4f, 0.9f);
+                    Line(cp, Proj(rotW));
+                    ObstacleHandle(i, 1, Proj(rotW), area, MouseCursor.RotateArrow, new Color(0.3f, 1f, 0.4f, 0.9f));
+                }
+                // 4 handle GÓC để co/giãn (scale đối xứng qua tâm) — hid 2..5.
+                var corners = new[] { c0, c1, c2, c3 };
+                for (int k = 0; k < 4; k++)
+                    if (Front(corners[k]))
+                        ObstacleHandle(i, 2 + k, Proj(corners[k]), area, MouseCursor.ScaleArrow, new Color(0.3f, 0.9f, 1f, 0.9f));
+                ObstacleHandle(i, 0, cp, area, MouseCursor.MoveArrow, new Color(1f, 0.5f, 0.9f, 0.9f)); // tâm vẽ sau, nằm trên
+            }
+            ApplyObstacleDrag();
+        }
+
+        private void ObstacleHandle(int i, int hid, Vector2 p, Rect area, MouseCursor cursor, Color col)
+        {
+            if (!area.Contains(p)) return;
+            float hr = hid == 0 ? 7f : 6f;
+            var hrect = new Rect(p.x - hr, p.y - hr, hr * 2, hr * 2);
+            bool active = _dragObstacle == i && _dragObHandle == hid;
+            EditorGUI.DrawRect(hrect, active ? Color.yellow : col);
+            EditorGUIUtility.AddCursorRect(hrect, cursor);
+            var e = Event.current;
+            if (e.type == EventType.MouseDown && e.button == 0 && !e.alt && hrect.Contains(e.mousePosition))
+            {
+                _dragObstacle = i; _dragObHandle = hid; _selObstacle = i;
+                if (_target.Obstacles != null && i < _target.Obstacles.Count && _target.Obstacles[i] != null)
+                    _dragObStart = _target.Obstacles[i].Pos;
+                e.Use();
+            }
+        }
+
+        // Kéo obstacle: 0 = di chuyển tâm (Shift khóa trục) · 1 = xoay quanh Y · 2..5 = kéo 1 trong 4 GÓC
+        // để co/giãn — GÓC ĐỐI DIỆN giữ cố định làm mốc, tâm dịch theo (không giãn đều quanh tâm).
+        private void ApplyObstacleDrag()
+        {
+            if (_dragObstacle < 0 || _so == null) return;
+            var obs = _so.FindProperty("Obstacles");
+            if (obs == null || _dragObstacle >= obs.arraySize) { _dragObstacle = -1; return; }
+            var e = Event.current;
+            if (e.type == EventType.MouseDrag)
+            {
+                Vector3 nw = InverseV(e.mousePosition);
+                var el = obs.GetArrayElementAtIndex(_dragObstacle);
+                if (_dragObHandle == 0)
+                {
+                    var pp = el.FindPropertyRelative("Pos");
+                    Vector3 old = pp.vector3Value;
+                    Vector3 t = new Vector3(nw.x, old.y, nw.z);
+                    if (e.shift)
+                    {
+                        if (Mathf.Abs(nw.x - _dragObStart.x) >= Mathf.Abs(nw.z - _dragObStart.z)) t.z = _dragObStart.z;
+                        else t.x = _dragObStart.x;
+                    }
+                    pp.vector3Value = t;
+                }
+                else if (_dragObHandle == 1)
+                {
+                    Vector3 center = el.FindPropertyRelative("Pos").vector3Value;
+                    Vector3 v = nw - center; v.y = 0f;
+                    if (v.sqrMagnitude > 1e-6f)
+                        el.FindPropertyRelative("RotationY").floatValue =
+                            Mathf.Repeat(Mathf.Atan2(v.x, v.z) * Mathf.Rad2Deg, 360f);
+                }
+                else
+                {
+                    // Kéo 1 GÓC: GÓC ĐỐI DIỆN giữ cố định làm mốc, góc đang kéo bám chuột → tâm DỊCH theo
+                    // (không giãn đều quanh tâm). Dấu góc trong hệ local suy từ hid: 2=c0(−,−) 3=c1(+,−)
+                    // 4=c2(+,+) 5=c3(−,+).
+                    int hk = _dragObHandle - 2;
+                    float sx = (hk == 1 || hk == 2) ? 1f : -1f;
+                    float sz = hk >= 2 ? 1f : -1f;
+                    var o = _dragObstacle < _target.Obstacles.Count ? _target.Obstacles[_dragObstacle] : null;
+                    Vector3 fp = ModelFootprint(o?.Prefab);
+                    float fx = Mathf.Max(0.01f, fp.x), fz = Mathf.Max(0.01f, fp.z);
+
+                    var posP = el.FindPropertyRelative("Pos");
+                    var sp = el.FindPropertyRelative("Scale");
+                    Vector3 center = posP.vector3Value;
+                    Vector3 sc = sp.vector3Value; if (sc == Vector3.zero) sc = Vector3.one;
+                    float halfX = fx * Mathf.Abs(sc.x) * 0.5f, halfZ = fz * Mathf.Abs(sc.z) * 0.5f;
+                    Quaternion rot = Quaternion.Euler(0f, el.FindPropertyRelative("RotationY").floatValue, 0f);
+                    Vector3 ax = rot * Vector3.right, az = rot * Vector3.forward;
+
+                    // Mốc = góc đối diện (−sx, −sz) tính theo half HIỆN TẠI → đứng yên khi kéo.
+                    Vector3 anchor = center + ax * (-sx * halfX) + az * (-sz * halfZ);
+                    Vector3 lv = Quaternion.Inverse(rot) * (nw - anchor); lv.y = 0f; // vector mốc→chuột (local)
+                    float newScaleX = Mathf.Clamp(Mathf.Abs(lv.x) / fx, 0.05f, 100f);
+                    float newScaleZ = Mathf.Clamp(Mathf.Abs(lv.z) / fz, 0.05f, 100f);
+                    float newHalfX = fx * newScaleX * 0.5f, newHalfZ = fz * newScaleZ * 0.5f;
+                    // Tâm = mốc + nửa kích thước mới về phía góc đang kéo → góc đối diện vẫn ở anchor.
+                    Vector3 newCenter = anchor + ax * (sx * newHalfX) + az * (sz * newHalfZ);
+
+                    Vector3 outScale = sc; outScale.x = newScaleX; outScale.z = newScaleZ;
+                    if (outScale.y <= 0f) outScale.y = 1f;
+                    sp.vector3Value = outScale;
+                    posP.vector3Value = new Vector3(newCenter.x, center.y, newCenter.z);
+                }
+                e.Use(); Repaint();
+            }
+            else if (e.type == EventType.MouseUp) { _dragObstacle = -1; _dragObHandle = -1; e.Use(); }
+        }
+
+        // Kích thước model (bounds gộp mọi mesh, đã tính transform con) — footprint mặc định trên map khi
+        // Scale = 1, khớp kích thước lúc Instantiate model ở runtime. 1×1×1 nếu chưa gán / không có mesh.
+        private static Vector3 ModelFootprint(GameObject prefab)
+        {
+            if (prefab == null) return Vector3.one;
+            Vector3 min = Vector3.positiveInfinity, max = Vector3.negativeInfinity;
+            bool any = false;
+            void Acc(Mesh m, Transform t)
+            {
+                if (m == null) return;
+                var b = m.bounds; var mtx = t.localToWorldMatrix;
+                for (int k = 0; k < 8; k++)
+                {
+                    Vector3 corner = b.center + new Vector3(
+                        ((k & 1) == 0 ? -1 : 1) * b.extents.x,
+                        ((k & 2) == 0 ? -1 : 1) * b.extents.y,
+                        ((k & 4) == 0 ? -1 : 1) * b.extents.z);
+                    Vector3 w = mtx.MultiplyPoint3x4(corner);
+                    min = Vector3.Min(min, w); max = Vector3.Max(max, w); any = true;
+                }
+            }
+            foreach (var mf in prefab.GetComponentsInChildren<MeshFilter>(true)) Acc(mf.sharedMesh, mf.transform);
+            foreach (var sm in prefab.GetComponentsInChildren<SkinnedMeshRenderer>(true)) Acc(sm.sharedMesh, sm.transform);
+            if (!any) return Vector3.one;
+            Vector3 size = max - min;
+            return new Vector3(Mathf.Max(0.01f, size.x), Mathf.Max(0.01f, size.y), Mathf.Max(0.01f, size.z));
+        }
+
         private static readonly Color SpawnerCol = new Color(1f, 0.6f, 0.1f, 1f);
 
         /// <summary>
@@ -1345,6 +1535,9 @@ namespace Wayfu.Lamkn
                 }
                 hit = true;
             }
+            // Đang ERASE mà click (không rê) vào khoảng TRỐNG — không trúng cell nào (grid/handle đã e.Use()
+            // trước nên start=false, không lọt xuống đây) → thoát Erase, về None cho tiện.
+            if (start && _eraseMode && !hit) _eraseMode = false;
             if (hit || start) { e.Use(); Repaint(); }
         }
 
@@ -1580,7 +1773,7 @@ namespace Wayfu.Lamkn
             DrawSelectionSection();
             EditorGUILayout.Space(4); DrawMetaSection();
             EditorGUILayout.Space(4); DrawPathSection();
-            EditorGUILayout.Space(4); DrawPrefabsSection();
+            EditorGUILayout.Space(4); DrawObstaclesSection();
             EditorGUILayout.Space(4); DrawSlotsSection();
             EditorGUILayout.Space(4); DrawGridsSection();
             EditorGUILayout.EndScrollView();
@@ -1589,7 +1782,9 @@ namespace Wayfu.Lamkn
 
         // Đã bỏ khỏi UI (vẫn còn trong LevelData, code chiếu vẫn dùng): CAMERA FRAME (Ortho Size / Aspect /
         // Center) — không cần chỉnh tay nữa vì đang WYSIWYG theo Scene Camera.
-        // Tạm ẩn: NumberOfColors, MechanicNames, PROPS/OBSTACLES.
+        // Tạm ẩn: NumberOfColors, MechanicNames, BoardProps. (Obstacles có section riêng ở panel phải.)
+        // Prefabs Gun/Block/Bullet đã bỏ khỏi UI (PoolManager runtime vẫn đọc field trong LevelData —
+        // null thì fallback primitive), thay bằng section OBSTACLES.
         private void DrawMetaSection()
         {
             EditorGUILayout.BeginVertical("box");
@@ -1868,17 +2063,75 @@ namespace Wayfu.Lamkn
             if (pend >= 0) ApplyOp(q, pend, op);
         }
 
-        private void DrawPrefabsSection()
+        // OBSTACLES: list model đặt trên board. "+ Obstacle" thả 1 cái ở tâm view; kéo trên map để
+        // di chuyển/xoay/scale (xem DrawObstacles). Kích thước footprint = bounds model × Scale.
+        private void DrawObstaclesSection()
         {
+            var obs = _so.FindProperty("Obstacles");
             EditorGUILayout.BeginVertical("box");
-            _foldPrefabs = EditorGUILayout.Foldout(_foldPrefabs, "PREFABS", true, EditorStyles.foldoutHeader);
-            if (_foldPrefabs)
+            EditorGUILayout.BeginHorizontal();
+            _foldObstacles = EditorGUILayout.Foldout(_foldObstacles, $"OBSTACLES — {obs.arraySize}", true, EditorStyles.foldoutHeader);
+            if (GUILayout.Button("+ Obstacle", GUILayout.Width(84))) AddObstacle(obs);
+            EditorGUILayout.EndHorizontal();
+            if (!_foldObstacles) { EditorGUILayout.EndVertical(); return; }
+
+            EditorGUILayout.HelpBox("Bấm + Obstacle để thả 1 model lên map (ở giữa khung nhìn). Trên map: kéo "
+                + "TÂM (hồng) để di chuyển · handle XANH LÁ để xoay · kéo 1 trong 4 GÓC (xanh dương) để co/giãn. "
+                + "Chưa gán Model thì footprint = 1×1; gán vào là bằng kích thước model.", MessageType.None);
+
+            int pend = -1; ListOp op = ListOp.None;
+            for (int i = 0; i < obs.arraySize; i++)
             {
-                EditorGUILayout.PropertyField(_so.FindProperty("GunPrefab"));
-                EditorGUILayout.PropertyField(_so.FindProperty("BlockPrefab"));
-                EditorGUILayout.PropertyField(_so.FindProperty("BulletPrefab"));
+                var el = obs.GetArrayElementAtIndex(i);
+                EditorGUILayout.BeginVertical("box");
+                EditorGUILayout.BeginHorizontal();
+                var prefab = el.FindPropertyRelative("Prefab").objectReferenceValue;
+                bool selNow = _selObstacle == i;
+                var bg = GUI.backgroundColor;
+                GUI.backgroundColor = selNow ? new Color(1f, 0.85f, 0.4f) : bg;
+                if (GUILayout.Toggle(selNow, new GUIContent("◉", "Chọn obstacle này (viền vàng trên map)."),
+                        EditorStyles.miniButton, GUILayout.Width(24)) != selNow)
+                    _selObstacle = selNow ? -1 : i;
+                GUI.backgroundColor = bg;
+                EditorGUILayout.LabelField($"#{i} · {(prefab != null ? prefab.name : "(chưa có model)")}", EditorStyles.boldLabel);
+                var o = MiniButtons(i, obs.arraySize);
+                if (o != ListOp.None) { pend = i; op = o; }
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.PropertyField(el.FindPropertyRelative("Prefab"), new GUIContent("Model"));
+                EditorGUILayout.PropertyField(el.FindPropertyRelative("Pos"), new GUIContent("Vị trí"));
+                EditorGUILayout.PropertyField(el.FindPropertyRelative("RotationY"), new GUIContent("Xoay Y (°)"));
+                EditorGUILayout.PropertyField(el.FindPropertyRelative("Scale"), new GUIContent("Scale"));
+                if (GUILayout.Button("Reset Scale = 1 (kích thước model)"))
+                    el.FindPropertyRelative("Scale").vector3Value = Vector3.one;
+                EditorGUILayout.PropertyField(el.FindPropertyRelative("Type"));
+                EditorGUILayout.PropertyField(el.FindPropertyRelative("Strength"));
+                EditorGUILayout.EndVertical();
+            }
+            if (pend >= 0)
+            {
+                ApplyOp(obs, pend, op);
+                if (_selObstacle == pend && op == ListOp.Delete) _selObstacle = -1;
             }
             EditorGUILayout.EndVertical();
+        }
+
+        // Thả 1 obstacle mới ở TÂM khung nhìn hiện tại (InverseV của center) — rơi đúng chỗ đang xem.
+        private void AddObstacle(SerializedProperty obs)
+        {
+            int idx = obs.arraySize; obs.arraySize++;
+            var el = obs.GetArrayElementAtIndex(idx);
+            Vector3 at = _viewContent.width > 0f ? InverseV(_viewContent.center) : Vector3.zero;
+            at.y = 0f;
+            el.FindPropertyRelative("Prefab").objectReferenceValue = null;
+            el.FindPropertyRelative("Pos").vector3Value = at;
+            el.FindPropertyRelative("RotationY").floatValue = 0f;
+            el.FindPropertyRelative("Scale").vector3Value = Vector3.one;
+            el.FindPropertyRelative("Type").enumValueIndex = 0;
+            el.FindPropertyRelative("TargetCellIndex").intValue = -1;
+            el.FindPropertyRelative("Strength").intValue = 1;
+            _selObstacle = idx;
+            _foldObstacles = true;
         }
 
         private void DrawPathSection()
@@ -2385,6 +2638,10 @@ namespace Wayfu.Lamkn
                     c.FindPropertyRelative("CellScale").vector3Value = Vector3.one;
                     c.FindPropertyRelative("BlockCol").intValue = el;   // index cột trong hàng
                     c.FindPropertyRelative("SpawnerDepth").intValue = r; // 0 = hàng sát path
+                    // Mặc định MỌI cell sinh ra đều BẮN ĐƯỢC. Phải set rõ: mảng nới qua SerializedProperty
+                    // khởi tạo phần tử mới bằng default(bool)=false, KHÔNG theo field initializer (= true) của
+                    // BlockCellData → không set thì cả grid vừa Generate lại thành "không bắn được".
+                    c.FindPropertyRelative("Shootable").boolValue = true;
                     // Hướng dồn: Rect = mọi cell chung 1 hướng của grid; Arc = từng cell về tâm.
                     c.FindPropertyRelative("SpawnerDirectionAngleZ").floatValue = grid.DefaultCellAngle(r, el);
                 }
