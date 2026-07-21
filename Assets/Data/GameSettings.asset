@@ -12,7 +12,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 845dd53897d0dda4782a424fe8f33992, type: 3}
   m_Name: GameSettings
   m_EditorClassIdentifier: 
+  CoreType: 0
   SlotGunSpacing: 3
+  PathWidth: 2.5
   MaxGunOnPath: 5
   GunSpeed: 12
   GunSpacing: 3
@@ -21,7 +23,7 @@ MonoBehaviour:
   BurstSpawnStacked: 0
   BurstRowLead: 0.2
   GunFireRange: 12
-  GunFireAngle: 50
+  GunFireAngle: 60
   FrontStationDistance: 0
   BulletSpeed: 100
   BlockStackSpacing: 1

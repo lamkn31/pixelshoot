@@ -384,28 +384,32 @@ namespace Wayfu.Lamkn
             // dọc toàn grid. Grid thường thì dồn theo ƯU TIÊN các cấp dưới đây.
             bool multiSide = gr.Data.ShootableEdges != GridEdges.None;
 
-            // Lặp tới khi ổn định. ƯU TIÊN DỒN cho 1 ô chịu nhiều spawner: 1) SPAWNER8 (nhả kề + lan tỏa
-            // trong Reach) → 2) SPAWNER LINE (dồn tuần tự dọc đường) → 3) SPAWNER THƯỜNG (dồn dọc về hàng 0
-            // / 2D + refill ô gốc). Cấp dưới CHỈ chạy ở lượt mà cấp trên KHÔNG còn gì làm → cấp trên vét cạn
-            // trước, giành ô trước.
+            // Lặp tới khi ổn định. ƯU TIÊN DỒN cho 1 ô chịu nhiều spawner: 1) SPAWNER THƯỜNG (dồn dọc về
+            // hàng 0 / 2D + refill ô gốc — luôn là mặc định, không giới hạn reach) → 2) SPAWNER LINE (dồn
+            // tuần tự dọc đường, giới hạn Reach) → 3) SPAWNER8 (nhả kề + lan tỏa, giới hạn Reach). Cấp dưới
+            // CHỈ chạy ở lượt mà cấp trên KHÔNG còn gì làm → cấp trên vét cạn & giành ô trước; ô nào Line/8
+            // reach KHÔNG tới thì rơi về mặc định spawner thường.
             for (int guard = 0; guard < 64; guard++)
             {
                 bool moved = false, fed = false;
 
-                // Cấp 1 — Spawner8: nhả kề + lan tỏa (giới hạn Reach).
-                fed = FeedEightWayAll(gr);
-                moved = CascadeTowardSpawners(gr);
+                // Cấp 1 — dồn thường: dồn cell hiện có (dọc/2D) + refill ô gốc spawner thường + đáy.
+                if (!multiSide)
+                {
+                    moved = gr.Data.Collapse2D ? AdvanceCorner2D(gr) : AdvanceOnce(gr);
+                    fed = FeedRegular(gr) | TryRefill(gr);
+                }
 
                 if (!moved && !fed)
                 {
-                    // Cấp 2 — SpawnerLine (dọc trước, ngang sau).
+                    // Cấp 2 — SpawnerLine (dọc trước, ngang sau; giới hạn Reach).
                     bool lineFed = FeedLine(gr, verticalPass: true) | FeedLine(gr, verticalPass: false);
                     fed = lineFed;
-                    if (!lineFed && !multiSide)
+                    if (!lineFed)
                     {
-                        // Cấp 3 — dồn thường: dồn cell hiện có (dọc/2D) + refill ô gốc spawner thường + đáy.
-                        moved = gr.Data.Collapse2D ? AdvanceCorner2D(gr) : AdvanceOnce(gr);
-                        fed = FeedRegular(gr) | TryRefill(gr);
+                        // Cấp 3 — Spawner8: nhả kề + lan tỏa (giới hạn Reach).
+                        fed = FeedEightWayAll(gr);
+                        moved = CascadeTowardSpawners(gr);
                     }
                 }
 
