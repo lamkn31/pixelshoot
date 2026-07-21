@@ -37,7 +37,7 @@ namespace Wayfu.Lamkn
                                                          level.CornerRadius, 8, level.PathStyle);
                 if (s != null)
                 {
-                    float half = Mathf.Max(0f, level.PathWidth) * 0.5f;
+                    float half = Mathf.Max(0f, GameSettings.Instance != null ? GameSettings.Instance.PathWidth : 1.5f) * 0.5f;
                     for (int i = 1; i < s.Length; i++)
                     {
                         Gizmos.color = Color.cyan;

@@ -86,15 +86,25 @@ namespace Wayfu.Lamkn
     /// (4 dọc/ngang + 4 chéo) — không chỉ dồn theo 1 hướng cột như Spawner thường. Hợp với grid cột
     /// thẳng (Rect / Arc-Uniform); grid ArcLength hàng lệch số cell thì ô kề theo index có thể xiên.</para>
     /// </summary>
-    public enum BlockCellType { Normal, Spawner, Spawner8 }
+    /// <summary>
+    /// <para><b>SpawnerLine</b>: nguồn nhả theo 1 ĐƯỜNG THẲNG (dọc/ngang/chéo theo hướng
+    /// SpawnerDirectionAngleZ), lấp các ô trống trên đường đó tới tối đa <see cref="BlockCellData.SpawnerReach"/>
+    /// ô. Bất tử, đứng yên như Spawner8; nhả màu hiện tại trước rồi tới queue (conveyor).</para>
+    /// </summary>
+    public enum BlockCellType { Normal, Spawner, Spawner8, SpawnerLine }
 
     public static class BlockCellTypeExt
     {
-        /// <summary>Cell có hàng đợi nhả thêm không (gom cả Spawner 1 hướng lẫn Spawner8) — mọi chỗ
-        /// xử lý "cell có Queue" (build nguồn, cân bằng bullet↔block, vẽ ghost editor) đi qua đây để
-        /// thêm loại spawner mới không phải sửa rải rác.</summary>
+        /// <summary>Cell có hàng đợi nhả thêm không (gom mọi loại spawner) — mọi chỗ xử lý "cell có Queue"
+        /// (build nguồn, cân bằng bullet↔block, vẽ ghost editor) đi qua đây để thêm loại spawner mới không
+        /// phải sửa rải rác.</summary>
         public static bool IsSpawner(this BlockCellType t) =>
-            t == BlockCellType.Spawner || t == BlockCellType.Spawner8;
+            t == BlockCellType.Spawner || t == BlockCellType.Spawner8 || t == BlockCellType.SpawnerLine;
+
+        /// <summary>Nguồn BẤT TỬ + đứng yên (conveyor nhả ra ô khác): Spawner8 và SpawnerLine. Spawner
+        /// thường thì KHÔNG — ô gốc là cell thường, tự dồn lên.</summary>
+        public static bool IsStaticSource(this BlockCellType t) =>
+            t == BlockCellType.Spawner8 || t == BlockCellType.SpawnerLine;
     }
 
     /// <summary>
@@ -186,6 +196,9 @@ namespace Wayfu.Lamkn
         [Tooltip("Các CẠNH gun bắn được (grid bị path bao quanh nhiều mặt). None = mặc định cũ: chỉ mặt " +
                  "Front (hàng 0). Bật thêm Back/Left/Right để phá được từ nhiều phía; Spawner8 ở giữa vẫn bất tử.")]
         public GridEdges ShootableEdges = GridEdges.None;
+        [Tooltip("Bật = grid dồn cả DỌC (về hàng 0) LẪN NGANG (về index 0) → lấp lỗ 2 chiều về góc (hàng 0, " +
+                 "index 0). Tắt = chỉ dồn dọc như cũ. (Chỉ áp dụng khi KHÔNG bật ShootableEdges.)")]
+        public bool Collapse2D = false;
 
         [Header("Spline (chỉ dùng khi Shape = Spline)")]
         [Tooltip("Waypoint của đường uốn lượn, toạ độ LOCAL so với Center + Rotation — dời/xoay grid là " +
@@ -603,9 +616,12 @@ namespace Wayfu.Lamkn
                  "nào được dồn/refill vào đó — grid giữ nguyên hình, chỉ thủng đúng ô này.")]
         [Min(0)] public int BlockStackCt = 3;
         [Tooltip("Normal = phá xong biến mất. Spawner = còn hàng đợi phía sau, phá xong thì đẩy cell kế ra. " +
-                 "Spawner8 = như Spawner nhưng nhả thêm vào ô trống ở 8 ô xung quanh (4 dọc/ngang + 4 chéo).")]
+                 "Spawner8 = nhả vào ô trống ở 8 ô xung quanh. SpawnerLine = nhả theo 1 ĐƯỜNG (dọc/ngang " +
+                 "theo hướng mũi tên) tới tối đa Reach ô.")]
         public BlockCellType Type = BlockCellType.Normal;
-        [Tooltip("CHỈ dùng cho Spawner/Spawner8: các cell PHÍA SAU, đẩy ra lần lượt khi có ô trống để nhả.")]
+        [Tooltip("CHỈ dùng cho SpawnerLine: số ô tối đa nhả ra dọc theo hướng, tính từ ô gốc (0 = không giới hạn).")]
+        [Min(0)] public int SpawnerReach = 0;
+        [Tooltip("CHỈ dùng cho Spawner/Spawner8/SpawnerLine: các cell PHÍA SAU, đẩy ra lần lượt khi có ô trống để nhả.")]
         public List<PendingBlockData> Queue = new List<PendingBlockData>();
         [Tooltip("Hướng dồn/spawn của cell trên sàn ngang XZ, tính bằng độ quanh trục Y (0° = +Z).")]
         public float SpawnerDirectionAngleZ;

@@ -62,7 +62,7 @@ namespace Wayfu.Lamkn
 
             _path = CreatePath(level);
             ApplyPathLine(_path);
-            SetPathWidth(level.PathWidth);
+            SetPathWidth(gs != null ? gs.PathWidth : 1.5f); // Path Width dùng chung từ GameSettings
             SpawnTunnels(level);
         }
 

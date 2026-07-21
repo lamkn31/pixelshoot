@@ -23,7 +23,10 @@ namespace Wayfu.Lamkn
             public int Row, Col;
             public Queue<PendingBlockData> Queue;
             public float DirAngle;
-            public bool EightWay; // Spawner8: nhả thêm vào ô trống ở 8 ô quanh ô gốc
+            public bool EightWay; // Spawner8: nhả vào ô trống ở 8 ô quanh ô gốc
+            public bool Line;     // SpawnerLine: nhả theo 1 đường (StepRow,StepCol) tới Reach ô
+            public int Reach;     // SpawnerLine: số ô tối đa (0 = tới mép grid)
+            public int StepRow, StepCol; // SpawnerLine: bước đi 1 ô theo hướng nhả
         }
 
         // Thứ tự nhả của Spawner8 quanh ô gốc: 4 ô dọc/ngang trước, 4 ô chéo sau
@@ -95,26 +98,32 @@ namespace Wayfu.Lamkn
 
                         if (!cellData.Type.IsSpawner()) continue;
                         bool eight = cellData.Type == BlockCellType.Spawner8;
+                        bool line = cellData.Type == BlockCellType.SpawnerLine;
                         var q = new Queue<PendingBlockData>();
-                        // Spawner8 = conveyor: MÀU HIỆN TẠI (của chính ô gốc) là ĐẦU sequence → nhả ra
-                        // trước, rồi mới tới các màu trong Queue (yêu cầu). Spawner thường giữ nguyên: ô gốc
-                        // là cell thường, Queue chỉ là các mục refill phía sau.
-                        if (eight)
-                        {
+                        // Nguồn tĩnh (Spawner8/SpawnerLine) = conveyor: MÀU HIỆN TẠI (của chính ô gốc) là ĐẦU
+                        // sequence → nhả ra trước, rồi mới tới các màu trong Queue. Spawner thường giữ nguyên:
+                        // ô gốc là cell thường, Queue chỉ là các mục refill phía sau.
+                        if (eight || line)
                             q.Enqueue(new PendingBlockData { Color = cellData.Color, BlockStackCt = cellData.BlockStackCt });
-                            spawners[e] = true; // ô gốc Spawner8: cấm spawner khác nhả vào (giữ cố định)
-                        }
                         if (cellData.Queue != null)
                             foreach (var it in cellData.Queue)
                                 if (it != null && it.BlockStackCt > 0) q.Enqueue(it);
+                        if (q.Count == 0) continue;
 
-                        if (q.Count > 0)
-                            gr.Sources.Add(new SpawnerSource
-                            {
-                                Row = r, Col = e, Queue = q,
-                                DirAngle = cellData.SpawnerDirectionAngleZ,
-                                EightWay = eight,
-                            });
+                        // Ô gốc của MỌI loại spawner: cấm spawner khác nhả/dồn vào (yêu cầu). KHÔNG chặn dồn
+                        // dọc cũ (AdvanceOnce không xét cờ này) nên spawner thường vẫn hoạt động như trước.
+                        spawners[e] = true;
+
+                        var srcObj = new SpawnerSource
+                        {
+                            Row = r, Col = e, Queue = q,
+                            DirAngle = cellData.SpawnerDirectionAngleZ,
+                            EightWay = eight,
+                            Line = line,
+                            Reach = cellData.SpawnerReach,
+                        };
+                        if (line) LineStep(grid, cellData.SpawnerDirectionAngleZ, out srcObj.StepRow, out srcObj.StepCol);
+                        gr.Sources.Add(srcObj);
                     }
                     gr.Rows.Add(row);
                     gr.Holes.Add(holes);
@@ -371,17 +380,35 @@ namespace Wayfu.Lamkn
         // Arc-ArcLength → cột lệch (4/5/6) nên chỉ dồn được theo HÀNG như cũ.
         private void CollapseFront(GridRuntime gr)
         {
-            // Grid bị path bao nhiều mặt (ShootableEdges bật): KHÔNG dồn trượt 1 chiều. Thay vào đó block
-            // DỒN LAN TỎA hướng RA NGOÀI từ Spawner8 — ô trống ở xa được lấp bằng cell gần spawner hơn dịch
-            // ra, cứ thế lan vào tới ô sát spawner, và spawner nhả bù ô trong cùng. Nhờ vậy bắn cell ở đâu
-            // trong grid thì cả grid vẫn dồn kín, không chỉ 8 ô kề spawner. Grid mặc định (1 chiều) giữ nguyên.
+            // Grid bị path bao nhiều mặt (ShootableEdges): dùng Spawner8 làm cơ chế dồn (lan tỏa), KHÔNG dồn
+            // dọc toàn grid. Grid thường thì dồn theo ƯU TIÊN các cấp dưới đây.
             bool multiSide = gr.Data.ShootableEdges != GridEdges.None;
 
-            // Lặp: dồn (lan tỏa hoặc 1 chiều) → spawner nhả → refill → dồn tiếp… tới khi board ổn định.
+            // Lặp tới khi ổn định. ƯU TIÊN DỒN cho 1 ô chịu nhiều spawner: 1) SPAWNER8 (nhả kề + lan tỏa
+            // trong Reach) → 2) SPAWNER LINE (dồn tuần tự dọc đường) → 3) SPAWNER THƯỜNG (dồn dọc về hàng 0
+            // / 2D + refill ô gốc). Cấp dưới CHỈ chạy ở lượt mà cấp trên KHÔNG còn gì làm → cấp trên vét cạn
+            // trước, giành ô trước.
             for (int guard = 0; guard < 64; guard++)
             {
-                bool moved = multiSide ? CascadeTowardSpawners(gr) : AdvanceOnce(gr);
-                bool fed = FeedSources(gr) | (!multiSide && TryRefill(gr));
+                bool moved = false, fed = false;
+
+                // Cấp 1 — Spawner8: nhả kề + lan tỏa (giới hạn Reach).
+                fed = FeedEightWayAll(gr);
+                moved = CascadeTowardSpawners(gr);
+
+                if (!moved && !fed)
+                {
+                    // Cấp 2 — SpawnerLine (dọc trước, ngang sau).
+                    bool lineFed = FeedLine(gr, verticalPass: true) | FeedLine(gr, verticalPass: false);
+                    fed = lineFed;
+                    if (!lineFed && !multiSide)
+                    {
+                        // Cấp 3 — dồn thường: dồn cell hiện có (dọc/2D) + refill ô gốc spawner thường + đáy.
+                        moved = gr.Data.Collapse2D ? AdvanceCorner2D(gr) : AdvanceOnce(gr);
+                        fed = FeedRegular(gr) | TryRefill(gr);
+                    }
+                }
+
                 if (!moved && !fed) break;
             }
             // Số hàng giữ NGUYÊN (không xoá hàng rỗng) để Row của SpawnerSource luôn trỏ đúng ô.
@@ -467,6 +494,50 @@ namespace Wayfu.Lamkn
             return moved;
         }
 
+        // Dồn 2 chiều về GÓC (hàng 0, index 0) với ƯU TIÊN TUYỆT ĐỐI: VÉT CẠN dồn DỌC toàn grid trước, rồi
+        // mới NGANG, rồi CHÉO. Trả về ngay sau hướng đầu tiên còn dồn được → guard-loop lặp lại sẽ tiếp tục
+        // dọc cho tới hết mới sang ngang (không để mỗi ô tự chọn greedy ngang khi chưa vét xong dọc).
+        private bool AdvanceCorner2D(GridRuntime gr)
+        {
+            if (AdvanceDir(gr, 1, 0)) return true; // 1. DỌC: kéo từ ô ngay trên (r+1, e)
+            if (AdvanceDir(gr, 0, 1)) return true; // 2. NGANG: kéo từ ô bên phải (r, e+1)
+            if (AdvanceDir(gr, 1, 1)) return true; // 3. CHÉO: kéo từ (r+1, e+1)
+            return false;
+        }
+
+        // 1 lượt kéo lấp theo 1 hướng (dr,dc): mỗi ô trống kéo cell từ ô nguồn (r+dr, e+dc) vào.
+        private bool AdvanceDir(GridRuntime gr, int dr, int dc)
+        {
+            bool moved = false;
+            for (int r = 0; r < gr.Rows.Count; r++)          // từ hàng 0 (góc) ra
+            {
+                var row = gr.Rows[r];
+                for (int e = 0; e < row.Length; e++)          // từ index 0 (góc) ra
+                {
+                    if (row[e] != null) continue;             // đã có cell
+                    if (IsHole(gr, r, e) || IsSpawnerCell(gr, r, e)) continue; // lỗ/spawner: không lấp
+                    if (TryPull(gr, r, e, r + dr, e + dc)) moved = true;
+                }
+            }
+            return moved;
+        }
+
+        // Kéo cell từ ô nguồn (sr,sc) vào ô trống (r,e) nếu nguồn hợp lệ (trong grid, có cell di chuyển được,
+        // không phải nguồn bất tử / ô spawner). true = đã kéo.
+        private bool TryPull(GridRuntime gr, int r, int e, int sr, int sc)
+        {
+            if (sr < 0 || sr >= gr.Rows.Count) return false;
+            var srow = gr.Rows[sr];
+            if (sc < 0 || sc >= srow.Length) return false;
+            var cell = srow[sc];
+            if (cell == null || cell.Indestructible || IsSpawnerCell(gr, sr, sc)) return false;
+            srow[sc] = null;
+            gr.Rows[r][e] = cell;
+            cell.SetColumn(e);
+            cell.MoveTo(gr.Data.CellPosAt(r, e, gr.Rows[r].Length), _collapseDuration);
+            return true;
+        }
+
         // Dồn LAN TỎA RA NGOÀI từ Spawner8: mỗi ô trống (không phải lỗ / ô spawner) được lấp bằng cell ở
         // 8-neighbor GẦN spawner hơn nó — cell đó dịch RA lấp chỗ, để lại chỗ trống gần spawner hơn, cứ thế
         // lan vào. Ô sát spawner (không còn neighbor nào gần hơn) do FeedSources nhả bù. Lặp qua guard-loop
@@ -487,6 +558,7 @@ namespace Wayfu.Lamkn
                     if (IsHole(gr, r, c) || IsSpawnerCell(gr, r, c)) continue; // lỗ / ô spawner: không lấp
                     int dE = DistToNearestSpawner(gr, r, c);
                     if (dE <= 0) continue;
+                    if (!WithinSpawnerReach(gr, r, c)) continue;              // ngoài Reach của mọi Spawner8
 
                     // Chọn neighbor có cell di chuyển được và GẦN spawner hơn ô này (ưu tiên dọc/ngang trước
                     // chéo nhờ thứ tự EightNeighbors + so sánh chặt "<").
@@ -529,16 +601,27 @@ namespace Wayfu.Lamkn
             return best == int.MaxValue ? -1 : best;
         }
 
-        private bool FeedSources(GridRuntime gr)
+        // Ô (r,c) có nằm trong Reach của MỘT Spawner8 đang hoạt động không (Reach ≤ 0 = vô hạn, tới mép).
+        private static bool WithinSpawnerReach(GridRuntime gr, int r, int c)
+        {
+            foreach (var src in gr.Sources)
+            {
+                if (!src.EightWay) continue;
+                int d = Mathf.Max(Mathf.Abs(src.Row - r), Mathf.Abs(src.Col - c));
+                if (src.Reach <= 0 || d <= src.Reach) return true;
+            }
+            return false;
+        }
+
+        // Spawner THƯỜNG (1 hướng): ô gốc trống (cell cũ vừa dồn lên) thì nhả mục kế ra đúng ô đó.
+        private bool FeedRegular(GridRuntime gr)
         {
             if (gr.Sources.Count == 0 || gr.Rows.Count == 0) return false;
             bool fed = false;
-
-            // Spawner THƯỜNG (1 hướng): ô gốc trống (cell cũ vừa dồn lên) thì nhả mục kế ra đúng ô đó.
             for (int i = gr.Sources.Count - 1; i >= 0; i--)
             {
                 var src = gr.Sources[i];
-                if (src.EightWay) continue;
+                if (src.EightWay || src.Line) continue;
                 if (src.Row >= gr.Rows.Count || src.Col >= gr.Rows[src.Row].Length || src.Queue.Count == 0)
                 { gr.Sources.RemoveAt(i); continue; }
                 int len = gr.Rows[src.Row].Length;
@@ -546,14 +629,88 @@ namespace Wayfu.Lamkn
                     fed |= SpawnFromQueue(gr, src.Queue, src.Row, src.Col,
                                           gr.Data.CellPosAt(src.Row + 1, src.Col, len), src.DirAngle);
             }
-
-            // Spawner8: 3 LƯỢT ưu tiên — DỌC trước, rồi NGANG, rồi CHÉO. Nhờ vậy 1 ô trống giáp nhiều
-            // spawner sẽ được spawner ở hướng ưu tiên cao hơn nhả trước; spawner hướng thấp hơn thấy ô đã
-            // đầy thì thôi (yêu cầu). Mỗi phát dùng MÀU HIỆN TẠI (đầu Queue) rồi mới tới màu kế.
-            fed |= FeedEightWay(gr, tier: 0); // dọc
-            fed |= FeedEightWay(gr, tier: 1); // ngang
-            fed |= FeedEightWay(gr, tier: 2); // chéo
             return fed;
+        }
+
+        // Nhả của Spawner8 (nhả kề 8 ô, nội bộ ưu tiên dọc → ngang → chéo). KHÔNG gồm lan tỏa cascade.
+        private bool FeedEightWayAll(GridRuntime gr)
+        {
+            if (gr.Sources.Count == 0 || gr.Rows.Count == 0) return false;
+            bool fed = false;
+            fed |= FeedEightWay(gr, tier: 0);
+            fed |= FeedEightWay(gr, tier: 1);
+            fed |= FeedEightWay(gr, tier: 2);
+            return fed;
+        }
+
+        // SpawnerLine dồn TUẦN TỰ (giống Spawner8/spawner thường, KHÔNG teleport màu từ queue ra ô xa):
+        // cell trên đường (StepRow,StepCol) dịch RA XA 1 bước lấp ô trống gần mép, và ô GẦN NHẤT sát nguồn
+        // được nhả bù từ queue (màu hiện tại trước). Quét từ XA về GẦN nên mỗi cell chỉ nhích 1 ô/lượt →
+        // qua guard-loop thành 1 băng chuyền chạy dần. Tối đa Reach ô (0 = tới mép grid).
+        // verticalPass: true = nguồn DỌC (StepCol==0); false = NGANG/chéo (StepCol!=0).
+        private bool FeedLine(GridRuntime gr, bool verticalPass)
+        {
+            bool changed = false;
+            for (int i = gr.Sources.Count - 1; i >= 0; i--)
+            {
+                var src = gr.Sources[i];
+                if (!src.Line) continue;
+                if (src.Row >= gr.Rows.Count || src.Col >= gr.Rows[src.Row].Length || src.Queue.Count == 0)
+                { RemoveStaticSource(gr, i); continue; }
+                if (src.StepRow == 0 && src.StepCol == 0) continue;
+                bool vertical = src.StepCol == 0;
+                if (vertical != verticalPass) continue;
+
+                int span = gr.Rows.Count;
+                foreach (var row in gr.Rows) if (row.Length > span) span = row.Length;
+                int maxStep = src.Reach > 0 ? Mathf.Min(src.Reach, span) : span;
+                Vector3 origin = gr.Data.CellPosAt(src.Row, src.Col, gr.Rows[src.Row].Length);
+
+                // XA → GẦN: mỗi ô trống kéo cell từ ô KỀ phía trong (gần nguồn hơn 1 bước) ra lấp; ô bước 1
+                // (sát nguồn) thì nguồn nhả bù từ queue.
+                for (int step = maxStep; step >= 1; step--)
+                {
+                    int r = src.Row + src.StepRow * step;
+                    int c = src.Col + src.StepCol * step;
+                    if (r < 0 || r >= gr.Rows.Count || c < 0 || c >= gr.Rows[r].Length) continue; // ngoài grid
+                    if (IsHole(gr, r, c) || IsSpawnerCell(gr, r, c)) continue; // lỗ/ô spawner: bỏ
+                    if (gr.Rows[r][c] != null) continue;                        // đã có cell
+
+                    if (step == 1)
+                    {
+                        if (src.Queue.Count > 0 && EmitHead(gr, src, r, c, origin))
+                        { changed = true; UpdateStaticSourceDisplay(gr, src); }
+                        continue;
+                    }
+                    // Kéo cell từ ô trong hơn 1 bước (step-1) ra.
+                    int pr = src.Row + src.StepRow * (step - 1);
+                    int pc = src.Col + src.StepCol * (step - 1);
+                    if (pr < 0 || pr >= gr.Rows.Count || pc < 0 || pc >= gr.Rows[pr].Length) continue;
+                    var pcell = gr.Rows[pr][pc];
+                    if (pcell == null || pcell.Indestructible || IsSpawnerCell(gr, pr, pc)) continue;
+                    gr.Rows[pr][pc] = null;
+                    gr.Rows[r][c] = pcell;
+                    pcell.SetColumn(c);
+                    pcell.MoveTo(gr.Data.CellPosAt(r, c, gr.Rows[r].Length), _collapseDuration);
+                    changed = true;
+                }
+                if (src.Queue.Count == 0) RemoveStaticSource(gr, i);
+            }
+            return changed;
+        }
+
+        // Đổi góc hướng nhả (độ quanh Y) thành bước đi 1 ô trên lưới theo trục grid: +Forward = hàng cao
+        // hơn, +Right(Cross(up,Forward)) = index cao hơn. Ngưỡng ~cos70° để dọc/ngang ra 1 trục, chéo ra 2.
+        private static void LineStep(BlockGridData grid, float dirAngle, out int stepRow, out int stepCol)
+        {
+            Vector3 f = grid.Forward; f.y = 0f;
+            f = f.sqrMagnitude < 1e-6f ? Vector3.forward : f.normalized;
+            Vector3 rt = Vector3.Cross(Vector3.up, f);
+            Vector3 dir = Quaternion.Euler(0f, dirAngle, 0f) * Vector3.forward;
+            float fc = Vector3.Dot(dir, f), rc = Vector3.Dot(dir, rt);
+            stepRow = Mathf.Abs(fc) > 0.35f ? (fc > 0f ? 1 : -1) : 0;
+            stepCol = Mathf.Abs(rc) > 0.35f ? (rc > 0f ? 1 : -1) : 0;
+            if (stepRow == 0 && stepCol == 0) stepRow = -1; // fallback: về hàng 0
         }
 
         // 1 lượt nhả của mọi Spawner8 theo tier hướng: 0 = dọc (dr≠0,dc=0), 1 = ngang (dr=0,dc≠0), 2 = chéo.
@@ -565,7 +722,7 @@ namespace Wayfu.Lamkn
                 var src = gr.Sources[i];
                 if (!src.EightWay) continue;
                 if (src.Row >= gr.Rows.Count || src.Col >= gr.Rows[src.Row].Length || src.Queue.Count == 0)
-                { RemoveEightWaySource(gr, i); continue; }
+                { RemoveStaticSource(gr, i); continue; }
 
                 int len = gr.Rows[src.Row].Length;
                 Vector3 origin = gr.Data.CellPosAt(src.Row, src.Col, len);
@@ -582,9 +739,9 @@ namespace Wayfu.Lamkn
                     if (!CanEnter(gr, r, c, gr.Rows[r])) continue;
 
                     // Nhả MÀU HIỆN TẠI ra ô kề (cell mới trượt từ ô gốc ra), rồi ô gốc chuyển sang màu kế.
-                    if (EmitHead(gr, src, r, c, origin)) { fed = true; UpdateEightWayDisplay(gr, src); }
+                    if (EmitHead(gr, src, r, c, origin)) { fed = true; UpdateStaticSourceDisplay(gr, src); }
                 }
-                if (src.Queue.Count == 0) RemoveEightWaySource(gr, i);
+                if (src.Queue.Count == 0) RemoveStaticSource(gr, i);
             }
             return fed;
         }
@@ -618,7 +775,7 @@ namespace Wayfu.Lamkn
         }
 
         // Sau khi nhả đầu Queue: ô gốc chuyển sang hiển thị màu kế (đầu Queue mới), hoặc despawn nếu đã cạn.
-        private void UpdateEightWayDisplay(GridRuntime gr, SpawnerSource src)
+        private void UpdateStaticSourceDisplay(GridRuntime gr, SpawnerSource src)
         {
             var cell = gr.Rows[src.Row][src.Col];
             if (src.Queue.Count == 0)
@@ -635,15 +792,15 @@ namespace Wayfu.Lamkn
                 BlockCol = src.Col,
                 SpawnerDepth = src.Row,
                 SpawnerDirectionAngleZ = src.DirAngle,
-                Type = BlockCellType.Spawner8, // vẫn là nguồn bất tử, đứng yên
+                Type = src.Line ? BlockCellType.SpawnerLine : BlockCellType.Spawner8, // giữ nguồn bất tử
             };
             cell.Build(data, _stackSpacing, gr.Data.CellScale, this);
             cell.SetMultiSide(gr.Data.ShootableEdges != GridEdges.None);
         }
 
-        // Gỡ 1 nguồn Spawner8 đã cạn: despawn ô gốc bất tử nếu còn (thành ô trống — vẫn là SpawnerCell nên
+        // Gỡ 1 nguồn tĩnh đã cạn: despawn ô gốc bất tử nếu còn (thành ô trống — vẫn là SpawnerCell nên
         // spawner khác không lấp vào).
-        private void RemoveEightWaySource(GridRuntime gr, int i)
+        private void RemoveStaticSource(GridRuntime gr, int i)
         {
             var src = gr.Sources[i];
             if (src.Row < gr.Rows.Count && src.Col < gr.Rows[src.Row].Length)

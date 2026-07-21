@@ -26,8 +26,7 @@ namespace Wayfu.Lamkn
         public PathStyle PathStyle = PathStyle.RoundedCorner;
         [Tooltip("Bán kính bo góc — CHỈ dùng khi PathStyle = RoundedCorner.")]
         public float CornerRadius = 1f;
-        [Tooltip("Độ rộng mặt đường (world units) — LineRenderer của PathManager và preview trong Level Tool.")]
-        [Min(0f)] public float PathWidth = 1.5f;
+        // Path Width đã chuyển sang GameSettings (dùng CHUNG mọi level) — xem GameSettings.PathWidth.
 
         [Header("Slots (số hàng gun + thứ tự gun ra)")]
         public List<SlotData> Slots = new List<SlotData>();

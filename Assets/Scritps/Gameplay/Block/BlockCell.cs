@@ -92,9 +92,9 @@ namespace Wayfu.Lamkn
             _blockScale = blockScale == Vector3.zero ? Vector3.one : blockScale;
             BlockCol = data.BlockCol;
             Depth = data.SpawnerDepth;
-            // Nguồn 8 hướng = bất tử, đứng yên: nó chỉ là ô hiển thị "màu kế tiếp sẽ nhả ra". Không bao giờ
-            // bị gun bắn trực tiếp; khi nhả hết sequence thì GridBlockManager tự despawn nó.
-            Indestructible = data.Type == BlockCellType.Spawner8;
+            // Nguồn tĩnh (Spawner8/SpawnerLine) = bất tử, đứng yên: chỉ là ô hiển thị "màu kế tiếp sẽ nhả
+            // ra". Không bao giờ bị gun bắn trực tiếp; khi nhả hết sequence thì GridBlockManager tự despawn nó.
+            Indestructible = data.Type.IsStaticSource();
             _pendingHits = 0;
             Generation++;                    // object pool tái dùng → đây là 1 cell MỚI
             PendingEntry = false;            // reset cho item pooled; MoveTo tự bật khi cell trượt

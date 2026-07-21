@@ -438,7 +438,7 @@ namespace Wayfu.Lamkn
             }
             if (_gsSO == null || _gsSO.targetObject != gs) _gsSO = new SerializedObject(gs);
             _gsSO.Update();
-            foreach (var name in new[] { "CoreType", "SlotGunSpacing", "MaxGunOnPath", "GunSpeed", "GunSpacing",
+            foreach (var name in new[] { "CoreType", "SlotGunSpacing", "PathWidth", "MaxGunOnPath", "GunSpeed", "GunSpacing",
                 "FireInterval", "FireMode", "BurstSpawnStacked", "BurstRowLead", "GunFireRange",
                 "GunFireAngle", "FrontStationDistance", "BulletSpeed", "BlockStackSpacing",
                 "BlockCollapseDuration" })
@@ -541,7 +541,7 @@ namespace Wayfu.Lamkn
                 var samples = _pathSamples;
                 if (samples != null && samples.Length >= 2)
                 {
-                    float half = Mathf.Max(0f, _target.PathWidth) * 0.5f;
+                    float half = Mathf.Max(0f, PathWidthShared) * 0.5f;
                     for (int i = 1; i < samples.Length; i++)
                     {
                         Vector3 p0 = samples[i - 1], p1 = samples[i];
@@ -686,7 +686,9 @@ namespace Wayfu.Lamkn
                             // Generate Cells lại; và không cho kéo xoay từng cell. Arc thì đọc data.
                             if (_showDir)
                             {
-                                bool autoDir = grid.CellAngleFromShape;
+                                // SpawnerLine: hướng nhả do NGƯỜI DÙNG đặt (kéo xoay), kể cả trên Rect/Spline
+                                // vốn auto-hướng — vì nó cần chỉ dọc/ngang tuỳ ý.
+                                bool autoDir = grid.CellAngleFromShape && cell.Type != BlockCellType.SpawnerLine;
                                 float baseAng = autoDir ? grid.DefaultCellAngle(r, e)
                                                         : cell.SpawnerDirectionAngleZ;
                                 if (cell.Type == BlockCellType.Spawner8)
@@ -1135,7 +1137,14 @@ namespace Wayfu.Lamkn
                                      System.Func<Vector3, Vector2> Proj, System.Func<Vector3, bool> Front,
                                      System.Func<Vector3, float, float> PixSize)
         {
-            Vector3 back = grid.CellPosAt(r + 1, e, count) - wp; back.y = 0f;
+            // SpawnerLine: xếp ghost queue DỌC THEO hướng nhả (đường mà cell sẽ được đẩy ra) — xem trước cả
+            // đường. Spawner thường/Spawner8: xếp về phía SAU (hàng sâu hơn) như cũ.
+            Vector3 back;
+            if (cell.Type == BlockCellType.SpawnerLine)
+                back = Quaternion.Euler(0f, cell.SpawnerDirectionAngleZ, 0f) * Vector3.forward;
+            else
+                back = grid.CellPosAt(r + 1, e, count) - wp;
+            back.y = 0f;
             if (back.sqrMagnitude < 1e-6f) return;
             back.Normalize();
 
@@ -1633,7 +1642,13 @@ namespace Wayfu.Lamkn
 
             var typeProp = c.FindPropertyRelative("Type");
             EditorGUILayout.PropertyField(typeProp, new GUIContent("Type"));
-            if (((BlockCellType)typeProp.enumValueIndex).IsSpawner()) DrawCellQueue(c);
+            var cellType = (BlockCellType)typeProp.enumValueIndex;
+            if (cellType == BlockCellType.SpawnerLine || cellType == BlockCellType.Spawner8)
+                EditorGUILayout.PropertyField(c.FindPropertyRelative("SpawnerReach"),
+                    new GUIContent("Reach (số ô)", cellType == BlockCellType.Spawner8
+                        ? "Số ô TỐI ĐA lan ra mỗi hướng (Chebyshev) từ ô gốc (0 = tới mép grid)."
+                        : "Số ô tối đa nhả ra dọc theo hướng mũi tên (0 = tới mép grid)."));
+            if (cellType.IsSpawner()) DrawCellQueue(c);
             else EditorGUILayout.HelpBox("Normal: phá hết stack là cell biến mất.", MessageType.None);
             EditorGUILayout.EndVertical();
         }
@@ -1648,9 +1663,12 @@ namespace Wayfu.Lamkn
             for (int i = 0; i < q.arraySize; i++)
                 total += Mathf.Max(0, q.GetArrayElementAtIndex(i).FindPropertyRelative("BlockStackCt").intValue);
             EditorGUILayout.LabelField($"Cell phía sau — {q.arraySize} mục · ∑{total} block", EditorStyles.miniBoldLabel);
-            bool eightWay = (BlockCellType)cell.FindPropertyRelative("Type").enumValueIndex == BlockCellType.Spawner8;
-            EditorGUILayout.HelpBox(eightWay
-                ? "Spawner8: ô gốc trống thì nhả như Spawner; NGOÀI RA còn nhả vào ô TRỐNG ở 8 ô xung quanh (4 dọc/ngang + 4 chéo). Block ở đây CÓ tính vào cân bằng bullet↔block."
+            var qType = (BlockCellType)cell.FindPropertyRelative("Type").enumValueIndex;
+            EditorGUILayout.HelpBox(
+                qType == BlockCellType.Spawner8
+                ? "Spawner8: nhả vào ô TRỐNG ở 8 ô xung quanh (dọc/ngang trước, rồi chéo). Nhả MÀU HIỆN TẠI trước rồi tới queue. Block ở đây CÓ tính vào cân bằng bullet↔block."
+                : qType == BlockCellType.SpawnerLine
+                ? "SpawnerLine: nhả theo 1 ĐƯỜNG dọc/ngang (theo mũi tên) tới tối đa Reach ô. Nhả MÀU HIỆN TẠI trước rồi tới queue (xem trước ghost dọc theo đường). Block ở đây CÓ tính vào cân bằng bullet↔block."
                 : "Spawner: phá hết stack hiện tại → đẩy mục kế ra ĐÚNG vị trí này (đổi màu/stack). Hết hàng đợi mới biến mất. Block ở đây CÓ tính vào cân bằng bullet↔block.",
                 MessageType.None);
 
@@ -1707,7 +1725,12 @@ namespace Wayfu.Lamkn
             if (!_target.IsClosed)
                 EditorGUILayout.HelpBox("Path HỞ → PathManager sinh TunnelIn ở đầu và TunnelOut ở cuối "
                     + "(gán prefab trên PathManager trong scene).", MessageType.None);
-            EditorGUILayout.PropertyField(_so.FindProperty("PathWidth"), new GUIContent("Path Width"));
+            EditorGUILayout.HelpBox($"Path Width = {PathWidthShared:0.##} (DÙNG CHUNG — chỉnh ở GAME SETTINGS panel trái).", MessageType.None);
+
+            if (GUILayout.Button(new GUIContent("Xóa cell grid trùng path",
+                "Xoá (stack = 0 → lỗ) mọi cell của các grid nằm ĐÈ lên mặt đường (trong Path Width). Dùng để " +
+                "dọn chỗ path chạy qua grid.")))
+                DeleteCellsOverlappingPath();
 
             var wp = _so.FindProperty("PathWaypoints");
             _foldWaypoints = EditorGUILayout.Foldout(_foldWaypoints, $"Waypoints — {wp.arraySize}", true);
@@ -1730,6 +1753,70 @@ namespace Wayfu.Lamkn
                 if (pend >= 0) ApplyOp(wp, pend, op);
             }
             EditorGUILayout.EndVertical();
+        }
+
+        // Path Width DÙNG CHUNG mọi level — đọc từ GameSettings (fallback 1.5 nếu chưa có asset).
+        private static float PathWidthShared => GameSettings.Instance != null ? GameSettings.Instance.PathWidth : 1.5f;
+
+        // Xoá mọi cell của các grid nằm ĐÈ lên mặt đường path (tâm cell cách đường ≤ nửa Path Width + nửa
+        // kích thước cell). Đặt stack = 0 → thành lỗ, giống thao tác Delete/Erase.
+        private void DeleteCellsOverlappingPath()
+        {
+            var samples = _target.PathWaypoints != null && _target.PathWaypoints.Count >= 2
+                ? RoundedPolylinePath.BuildSamples(_target.PathWaypoints, _target.IsClosed,
+                                                   _target.CornerRadius, 8, _target.PathStyle)
+                : null;
+            if (samples == null || samples.Length < 2)
+            {
+                EditorUtility.DisplayDialog("Xóa cell trùng path", "Path cần ít nhất 2 waypoint.", "OK");
+                return;
+            }
+
+            float halfW = Mathf.Max(0f, PathWidthShared) * 0.5f;
+            var grids = _so.FindProperty("Grids");
+            int removed = 0;
+            for (int gi = 0; gi < _target.Grids.Count && gi < grids.arraySize; gi++)
+            {
+                var grid = _target.Grids[gi];
+                if (grid == null) continue;
+                var cells = grids.GetArrayElementAtIndex(gi).FindPropertyRelative("Cells");
+                // Dùng nửa ĐƯỜNG CHÉO của cell (≈ 0.707 × cạnh) làm tầm với: cell chỉ cần lẹm 1 GÓC vào
+                // dải path (không cần tâm nằm trong) là đã bị xóa. Lấy cạnh = max(BlockWidth, CellScale) cho
+                // chắc (BlockWidth = bước xếp, CellScale = scale hiển thị block).
+                float cellSize = Mathf.Max(0.05f, Mathf.Max(grid.BlockWidth, grid.CellScale.x));
+                float thr = halfW + cellSize * 0.7071f;
+                for (int r = 0; r < grid.Rows; r++)
+                {
+                    int count = grid.ElementsInRow(r);
+                    for (int e = 0; e < count; e++)
+                    {
+                        var cd = grid.GetCell(r, e);
+                        if (cd == null || cd.BlockStackCt <= 0) continue;
+                        if (DistToPath(grid.CellPos(r, e), samples) > thr) continue;
+                        int idx = grid.CellIndex(r, e);
+                        if (idx < 0 || idx >= cells.arraySize) continue;
+                        cells.GetArrayElementAtIndex(idx).FindPropertyRelative("BlockStackCt").intValue = 0;
+                        removed++;
+                    }
+                }
+            }
+            Debug.Log($"[LevelTool] Đã xóa {removed} cell trùng path.");
+        }
+
+        // Khoảng cách (trên sàn XZ) từ điểm tới polyline path (min qua mọi đoạn mẫu).
+        private static float DistToPath(Vector3 p, Vector3[] samples)
+        {
+            p.y = 0f;
+            float best = float.MaxValue;
+            for (int i = 0; i + 1 < samples.Length; i++)
+            {
+                Vector3 a = samples[i]; a.y = 0f;
+                Vector3 b = samples[i + 1]; b.y = 0f;
+                Vector3 ab = b - a;
+                float t = ab.sqrMagnitude < 1e-8f ? 0f : Mathf.Clamp01(Vector3.Dot(p - a, ab) / ab.sqrMagnitude);
+                best = Mathf.Min(best, Vector3.Distance(p, a + ab * t));
+            }
+            return best;
         }
 
         private void DrawSlotsSection()
@@ -1827,6 +1914,9 @@ namespace Wayfu.Lamkn
                     "Shootable Edges",
                     "Các CẠNH gun bắn được khi path bao quanh grid. None = mặc định cũ (chỉ mặt Front/hàng 0). " +
                     "Bật Front/Back/Left/Right để phá từ nhiều phía; đặt Spawner8 ở giữa làm nguồn bất tử."));
+                EditorGUILayout.PropertyField(grid.FindPropertyRelative("Collapse2D"), new GUIContent(
+                    "Collapse 2D",
+                    "Dồn cả DỌC (về hàng 0) lẫn NGANG (về index 0) → lấp lỗ 2 chiều về góc. Chỉ khi KHÔNG bật Shootable Edges."));
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("Center"));
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("Rotation"),
                     new GUIContent("Rotation (Y°)", "Xoay cả grid quanh trục Y. Kéo handle XANH LÁ trong khung giữa."));
