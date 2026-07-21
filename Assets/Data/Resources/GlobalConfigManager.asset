@@ -25,4 +25,48 @@ MonoBehaviour:
     color: {r: 0, g: 0.19427729, b: 1, a: 1}
     matBlock: {fileID: 2100000, guid: e9883398ee14092429bfe97265ee62cf, type: 2}
     matGun: {fileID: 2100000, guid: e04dc5ce9828fb740b1f89eb312efd42, type: 2}
+  - typeColor: 4
+    color: {r: 0.98765564, g: 1, b: 0, a: 1}
+    matBlock: {fileID: 0}
+    matGun: {fileID: 0}
+  - typeColor: 5
+    color: {r: 0.47564507, g: 0, b: 1, a: 1}
+    matBlock: {fileID: 0}
+    matGun: {fileID: 0}
+  - typeColor: 6
+    color: {r: 0, g: 0.8865156, b: 1, a: 1}
+    matBlock: {fileID: 0}
+    matGun: {fileID: 0}
+  - typeColor: 7
+    color: {r: 1, g: 0.6443302, b: 0, a: 1}
+    matBlock: {fileID: 0}
+    matGun: {fileID: 0}
+  - typeColor: 8
+    color: {r: 0.9681535, g: 0, b: 1, a: 1}
+    matBlock: {fileID: 0}
+    matGun: {fileID: 0}
+  - typeColor: 9
+    color: {r: 0.6320754, g: 0.36492825, b: 0, a: 1}
+    matBlock: {fileID: 0}
+    matGun: {fileID: 0}
+  - typeColor: 10
+    color: {r: 0.4716981, g: 0.4716981, b: 0.4716981, a: 1}
+    matBlock: {fileID: 0}
+    matGun: {fileID: 0}
+  - typeColor: 11
+    color: {r: 0, g: 0, b: 0, a: 1}
+    matBlock: {fileID: 0}
+    matGun: {fileID: 0}
+  - typeColor: 12
+    color: {r: 1, g: 1, b: 1, a: 1}
+    matBlock: {fileID: 0}
+    matGun: {fileID: 0}
+  - typeColor: 13
+    color: {r: 1, g: 0, b: 0.48377466, a: 1}
+    matBlock: {fileID: 0}
+    matGun: {fileID: 0}
+  - typeColor: 14
+    color: {r: 0.051057402, g: 0.41509432, b: 0, a: 1}
+    matBlock: {fileID: 0}
+    matGun: {fileID: 0}
   listEnviroment: []
