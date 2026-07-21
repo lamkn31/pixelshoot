@@ -2603,12 +2603,12 @@ namespace Wayfu.Lamkn
             g.FindPropertyRelative("Layout").enumValueIndex = (int)BlockGridLayout.ArcLength;
             g.FindPropertyRelative("Cells").arraySize = 0;
 
-            // Default riêng theo shape: Rect (lưới sát nhau) = BlockW 0 · Dist Row 0 = 0 · RowSpacing 1 ·
-            // Spacing 0; Spline (dải uốn lượn); còn lại Arc.
+            // Default riêng theo shape: Rect = BlockW 0 · Dist Row 0 = 0 · RowSpacing 1 · Spacing 1;
+            // Spline (dải uốn lượn); còn lại Arc.
             g.FindPropertyRelative("BaseRadius").floatValue = spline || rect ? 0f : 3f;   // Dist/Lệch Row 0
             g.FindPropertyRelative("RowSpacing").floatValue = rect ? 1f : spline ? 1f : 1.2f;
             g.FindPropertyRelative("BlockWidth").floatValue = spline || rect ? 0f : 0.8f;
-            g.FindPropertyRelative("Spacing").floatValue = rect ? 0f : spline ? 0.8f : 0.2f;
+            g.FindPropertyRelative("Spacing").floatValue = rect ? 1f : spline ? 0.8f : 0.2f;
 
             var scr = g.FindPropertyRelative("SplineCornerRadius");
             if (scr != null) scr.floatValue = 5f;
