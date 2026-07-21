@@ -31,6 +31,8 @@ namespace Wayfu.Lamkn
         private bool _showPath = true, _showSlots = true, _showBlocks = true, _showFrame = true, _showRange = true, _showDir = true;
         // Thanh cạnh: xanh = cạnh grid bắn được (ShootableEdges), đỏ = mặt chặn.
         private bool _showEdges = true;
+        // Mũi tên các HƯỚNG cell có thể dồn/move (dọc; + ngang/chéo nếu Collapse2D).
+        private bool _showMove = false;
         // Ghost hàng đợi của cell Spawner — tắt cho đỡ rối khi không sửa spawner.
         private bool _showQueue = true;
 
@@ -52,6 +54,7 @@ namespace Wayfu.Lamkn
         // Kéo.
         private int _dragWaypoint = -1;
         private int _dragGrid = -1, _dragHandle = -1; // handle: 0=Center, 1=Left tip, 2=Right tip
+        private Vector3 _dragGridStart;               // Center lúc bắt đầu kéo — để giữ Shift khóa trục
         private int _dragCellGrid = -1, _dragCellIndex = -1; // xoay hướng 1 cell
         private Vector3 _dragCellCenter;
         private int _dragSplineGrid = -1, _dragSplineWp = -1; // kéo waypoint của Spline grid
@@ -67,6 +70,11 @@ namespace Wayfu.Lamkn
         // Erase: click/rê chuột vào block là XOÁ ngay (stack = 0 → lỗ), khỏi phải chọn rồi bấm Delete.
         // Loại trừ lẫn nhau với tô màu (bật Erase thì _paintColor về None).
         private bool _eraseMode;
+
+        // Shoot paint: click/rê vào cell là đặt cờ Shootable = _shootValue. Loại trừ với tô màu & erase.
+        // _shootValue = false → tô "KHÔNG bắn được" (gạch X); true → tô lại "bắn được".
+        private bool _shootMode;
+        private bool _shootValue = false;
 
         // Brush tô màu: giữ chuột rê qua nhiều cell thay vì chấm từng ô.
         private bool _painting;
@@ -89,6 +97,12 @@ namespace Wayfu.Lamkn
         // Giá trị áp dụng CHUNG cho nhiều cell đang chọn.
         private TypeColor _multiColor = TypeColor.Red;
         private BlockCellType _multiType = BlockCellType.Normal;
+        private bool _multiShootable = true;
+        // Thao tác HÀNG LOẠT cho queue của spawner: thêm N mục, đặt màu/stack cả queue.
+        private int _queueAddCount = 3;
+        private TypeColor _queueBulkColor = TypeColor.Red;
+        private int _queueBulkStack = 3;
+        private int _multiQueueCount = 3;
         private int _multiStack = 3;
 
         // Đường bo góc của path, dựng 1 lần mỗi lần vẽ (dùng chung với runtime qua BuildSamples).
@@ -251,6 +265,9 @@ namespace Wayfu.Lamkn
             _showEdges = GUILayout.Toggle(_showEdges, new GUIContent("Edges",
                 "Vẽ thanh quanh grid cho biết mặt nào gun bắn được (Shootable Edges). Xanh = bắn được, " +
                 "đỏ = mặt chặn. Grid mặc định (None) chỉ hiện xanh ở mặt Front (hàng 0)."), EditorStyles.toolbarButton);
+            _showMove = GUILayout.Toggle(_showMove, new GUIContent("Move",
+                "Mũi tên xanh cyan = các HƯỚNG cell có thể dồn/move khi collapse: DỌC (về hàng 0). " +
+                "Bật Collapse2D thì thêm NGANG (về index 0) và CHÉO."), EditorStyles.toolbarButton);
             _showQueue = GUILayout.Toggle(_showQueue, new GUIContent("Queue",
                 "Hiện các cell hàng đợi nằm SAU cell Spawner (ô mờ + ô \"+\"). Tắt cho đỡ rối khi không sửa spawner — " +
                 "tắt rồi thì click cũng không còn trúng chúng nữa."), EditorStyles.toolbarButton);
@@ -474,6 +491,15 @@ namespace Wayfu.Lamkn
             EditorGUILayout.EndVertical();
         }
 
+        // Vị trí vẽ thứ oi → index grid: đẩy grid ACTIVE xuống CUỐI (vẽ trên nóc). Không có active → giữ nguyên.
+        private int DrawGridOrder(int oi)
+        {
+            int n = _target.Grids.Count;
+            if (_activeGrid < 0 || _activeGrid >= n) return oi;
+            if (oi == n - 1) return _activeGrid;            // slot cuối = grid active
+            return oi < _activeGrid ? oi : oi + 1;          // các slot trước: bỏ qua index active
+        }
+
         private void DrawSchematicView(Rect area)
         {
             Camera cam = _previewCamera;
@@ -535,6 +561,16 @@ namespace Wayfu.Lamkn
                 Vector2 n = new Vector2(-d.y, d.x); float h = Mathf.Min(7f, m * 0.5f);
                 Line(to, to - d * h + n * h * 0.55f);
                 Line(to, to - d * h - n * h * 0.55f);
+            }
+            // Mũi tên NGẮN từ tâm cell about 42% về phía ô đích — cho biết hướng cell có thể dồn tới.
+            void MoveArrow(Vector3 from, Vector3 target)
+            {
+                Vector3 dd = target - from; dd.y = 0f;
+                if (dd.sqrMagnitude < 1e-6f) return;
+                Vector3 tipW = from + dd * 0.42f;
+                if (!Front(from) || !Front(tipW)) return;
+                Vector2 a = Proj(from), b = Proj(tipW);
+                Line(a, b); ArrowHead(a, b);
             }
 
             // Khung camera = 4 góc frustum cắt y=0 (đúng vùng camera nhìn trên sàn).
@@ -634,8 +670,10 @@ namespace Wayfu.Lamkn
                 // Grid active trỏ ra ngoài danh sách (vừa xoá grid) → về -1, không thì khóa sạch mọi grid.
                 if (_activeGrid >= _target.Grids.Count) _activeGrid = -1;
 
-                for (int gi = 0; gi < _target.Grids.Count; gi++)
+                for (int oi = 0; oi < _target.Grids.Count; oi++)
                 {
+                    // Vẽ grid ACTIVE SAU CÙNG (trên nóc) để không bị grid mờ index lớn hơn vẽ đè che mất.
+                    int gi = DrawGridOrder(oi);
                     var grid = _target.Grids[gi];
                     if (grid == null) continue;
                     int last = Mathf.Max(0, grid.Rows - 1);
@@ -688,14 +726,31 @@ namespace Wayfu.Lamkn
                             }
                             bool isSpawner = cell.Type.IsSpawner();
                             var cellCol = GlobalConfigManager.ColorOf(cell.Color);
-                            if (!editable) cellCol.a *= 0.35f; // grid bị khóa → làm mờ để thấy rõ đang khóa
+                            if (!editable) cellCol.a *= 0.22f; // grid bị khóa → làm MỜ HẲN để nổi grid active
                             FillRect(cellRect, cellCol);
+                            // Cell KHÔNG bắn được: gạch chéo X + viền đen để phân biệt.
+                            if (!cell.Shootable)
+                            {
+                                Handles.color = new Color(0f, 0f, 0f, 0.75f);
+                                Line(new Vector2(cellRect.x, cellRect.y), new Vector2(cellRect.xMax, cellRect.yMax));
+                                Line(new Vector2(cellRect.xMax, cellRect.y), new Vector2(cellRect.x, cellRect.yMax));
+                                DrawOutline(cellRect, new Color(0f, 0f, 0f, 0.9f), area);
+                            }
                             // Viền vàng = cell đang chọn; viền cam = cell Spawner (còn hàng đợi phía sau).
                             if (IsCellSelected(gi, flatIdx)) DrawOutline(cellRect, Color.yellow, area);
                             else if (isSpawner) DrawOutline(cellRect, SpawnerCol, area);
                             // Số block trong stack (giống nhãn số đạn của gun).
                             if (sz >= 10f && area.Contains(bp))
                                 GUI.Label(new Rect(bp.x - sz / 2, bp.y - sz / 2, sz, sz), cell.BlockStackCt.ToString(), blockLbl);
+
+                            // Các HƯỚNG cell có thể dồn/move khi collapse: DỌC (về hàng 0) luôn có; NGANG (về
+                            // index 0) chỉ khi Collapse2D. KHÔNG có chéo — chéo là của riêng Spawner8 (xem Dir).
+                            if (_showMove)
+                            {
+                                Handles.color = new Color(0.3f, 0.9f, 1f, 0.95f);
+                                if (r > 0 && e < grid.ElementsInRow(r - 1)) MoveArrow(wp, grid.CellPos(r - 1, e));
+                                if (grid.Collapse2D && e > 0) MoveArrow(wp, grid.CellPos(r, e - 1));
+                            }
 
                             // Hướng (rotate) của cell: mũi tên; kéo đầu mũi tên để xoay.
                             // Spawner: mũi tên CAM + dài hơn = hướng nhả cell ra, phân biệt ngay với cell thường.
@@ -831,7 +886,7 @@ namespace Wayfu.Lamkn
         // Giữ Ctrl (hoặc Cmd) = chọn THÊM (click lại vào cell đã chọn thì bỏ chọn).
         private void HandleMarquee(Rect area)
         {
-            if (_paintColor != TypeColor.None || _eraseMode) return; // đang tô màu / xoá → không quét chọn
+            if (_paintColor != TypeColor.None || _eraseMode || _shootMode) return; // tô màu / xoá / shoot → không quét
             var e = Event.current;
             switch (e.type)
             {
@@ -925,7 +980,10 @@ namespace Wayfu.Lamkn
                 if (gi < 0 || gi >= grids.arraySize) continue;
                 var cells = grids.GetArrayElementAtIndex(gi).FindPropertyRelative("Cells");
                 if (ci < 0 || ci >= cells.arraySize) continue;
-                cells.GetArrayElementAtIndex(ci).FindPropertyRelative("BlockStackCt").intValue = 0;
+                var cd = cells.GetArrayElementAtIndex(ci);
+                cd.FindPropertyRelative("BlockStackCt").intValue = 0;
+                var qp = cd.FindPropertyRelative("Queue"); // xoá luôn queue (ô thành lỗ)
+                if (qp != null) qp.arraySize = 0;
             }
             _selCells.Clear();
             e.Use(); Repaint();
@@ -1085,7 +1143,13 @@ namespace Wayfu.Lamkn
             EditorGUI.DrawRect(hrect, active ? Color.yellow : col);
             EditorGUIUtility.AddCursorRect(hrect, hid == 3 ? MouseCursor.RotateArrow : MouseCursor.MoveArrow);
             var e = Event.current;
-            if (e.type == EventType.MouseDown && e.button == 0 && !e.alt && hrect.Contains(e.mousePosition)) { _dragGrid = gi; _dragHandle = hid; e.Use(); }
+            if (e.type == EventType.MouseDown && e.button == 0 && !e.alt && hrect.Contains(e.mousePosition))
+            {
+                _dragGrid = gi; _dragHandle = hid;
+                if (_target != null && _target.Grids != null && gi < _target.Grids.Count && _target.Grids[gi] != null)
+                    _dragGridStart = _target.Grids[gi].Center; // mốc để Shift khóa trục
+                e.Use();
+            }
         }
 
         // Kéo tâm (0) hoặc 2 đầu cạnh (1/2): đầu cạnh set BaseRadius (khoảng cách) + ArcAngle (góc).
@@ -1103,7 +1167,16 @@ namespace Wayfu.Lamkn
                 {
                     var cp = g.FindPropertyRelative("Center");
                     Vector3 old = cp.vector3Value;
-                    cp.vector3Value = new Vector3(nw.x, old.y, nw.z);
+                    Vector3 t = new Vector3(nw.x, old.y, nw.z);
+                    // Giữ SHIFT → khóa vào 1 trục (trục nào dịch nhiều hơn tính từ điểm bắt đầu kéo).
+                    if (e.shift)
+                    {
+                        if (Mathf.Abs(nw.x - _dragGridStart.x) >= Mathf.Abs(nw.z - _dragGridStart.z))
+                            t.z = _dragGridStart.z; // chỉ đi ngang (X)
+                        else
+                            t.x = _dragGridStart.x; // chỉ đi dọc (Z)
+                    }
+                    cp.vector3Value = t;
                 }
                 else if (_dragHandle == 3)
                 {
@@ -1229,7 +1302,7 @@ namespace Wayfu.Lamkn
         {
             var e = Event.current;
             if (e.type == EventType.MouseUp) _painting = false;
-            if (_paintColor == TypeColor.None && !_eraseMode) return;
+            if (_paintColor == TypeColor.None && !_eraseMode && !_shootMode) return;
 
             bool start = e.type == EventType.MouseDown && e.button == 0 && !e.alt && area.Contains(e.mousePosition);
             bool cont = e.type == EventType.MouseDrag && _painting;
@@ -1251,10 +1324,18 @@ namespace Wayfu.Lamkn
                 if (h.flat < 0 || h.flat >= cells.arraySize) continue;
                 var cp = cells.GetArrayElementAtIndex(h.flat);
                 var stackP = cp.FindPropertyRelative("BlockStackCt");
-                if (_eraseMode)
+                if (_shootMode)
+                {
+                    // Đặt cờ bắn được/không cho cell (không đụng màu/stack).
+                    cp.FindPropertyRelative("Shootable").boolValue = _shootValue;
+                }
+                else if (_eraseMode)
                 {
                     // Xoá = đặt stack 0 → thành LỖ vĩnh viễn (runtime không dựng, không cho dồn/refill vào).
                     stackP.intValue = 0;
+                    // Xoá luôn hàng đợi: ô đã thành lỗ thì queue của nó vô nghĩa, để lại chỉ làm lệch cân bằng.
+                    var qp = cp.FindPropertyRelative("Queue");
+                    if (qp != null) qp.arraySize = 0;
                 }
                 else
                 {
@@ -1276,8 +1357,9 @@ namespace Wayfu.Lamkn
         {
             var e = Event.current;
             if (e.type != EventType.MouseDown || e.alt || !area.Contains(e.mousePosition)) return;
-            bool paint = e.button == 0 && _paintColor != TypeColor.None;
-            bool del = e.button == 1;
+            bool paint = e.button == 0 && _paintColor != TypeColor.None && !_eraseMode;
+            // Xoá ô queue: click PHẢI, hoặc click TRÁI khi đang ở chế độ Erase.
+            bool del = e.button == 1 || (e.button == 0 && _eraseMode);
             if (!paint && !del) return;
 
             foreach (var h in _hitQueue)
@@ -1589,7 +1671,55 @@ namespace Wayfu.Lamkn
             if (GUILayout.Button("Áp dụng", GUILayout.Width(70))) ApplyToSelected("BlockStackCt", _multiStack);
             EditorGUILayout.EndHorizontal();
 
+            EditorGUILayout.BeginHorizontal();
+            _multiShootable = EditorGUILayout.Toggle("Bắn được", _multiShootable);
+            if (GUILayout.Button("Áp dụng", GUILayout.Width(70))) ApplyToSelected("Shootable", _multiShootable ? 1 : 0);
+            EditorGUILayout.EndHorizontal();
+
+            // Thêm N mục queue vào MỌI ô đang chọn LÀ SPAWNER (màu = màu ô đó, stack = Hole Capacity).
+            EditorGUILayout.BeginHorizontal();
+            _multiQueueCount = Mathf.Clamp(EditorGUILayout.IntField("Queue +", _multiQueueCount), 1, 999);
+            if (GUILayout.Button("Thêm queue", GUILayout.Width(90))) AddQueueToSelected(_multiQueueCount);
+            if (GUILayout.Button("Clear queue", GUILayout.Width(90))) ClearQueueOfSelected();
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.HelpBox("Thêm/Clear queue chỉ tác dụng lên ô đang chọn là Spawner/Spawner8/SpawnerLine.", MessageType.None);
+
             EditorGUILayout.EndVertical();
+        }
+
+        // Thêm N mục queue vào mọi ô đang chọn là spawner; màu = màu ô, stack = Hole Capacity.
+        private void AddQueueToSelected(int count)
+        {
+            int defStack = Mathf.Max(1, _target.HoleCapacity);
+            var grids = _so.FindProperty("Grids");
+            foreach (var (gi, ci) in _selCells)
+            {
+                if (gi < 0 || gi >= grids.arraySize) continue;
+                var cells = grids.GetArrayElementAtIndex(gi).FindPropertyRelative("Cells");
+                if (ci < 0 || ci >= cells.arraySize) continue;
+                var cell = cells.GetArrayElementAtIndex(ci);
+                if (!((BlockCellType)cell.FindPropertyRelative("Type").enumValueIndex).IsSpawner()) continue;
+                int color = cell.FindPropertyRelative("Color").enumValueIndex;
+                var q = cell.FindPropertyRelative("Queue");
+                for (int k = 0; k < count; k++)
+                {
+                    var e = q.GetArrayElementAtIndex(AddArray(q));
+                    e.FindPropertyRelative("Color").enumValueIndex = color;
+                    e.FindPropertyRelative("BlockStackCt").intValue = defStack;
+                }
+            }
+        }
+
+        private void ClearQueueOfSelected()
+        {
+            var grids = _so.FindProperty("Grids");
+            foreach (var (gi, ci) in _selCells)
+            {
+                if (gi < 0 || gi >= grids.arraySize) continue;
+                var cells = grids.GetArrayElementAtIndex(gi).FindPropertyRelative("Cells");
+                if (ci < 0 || ci >= cells.arraySize) continue;
+                cells.GetArrayElementAtIndex(ci).FindPropertyRelative("Queue").arraySize = 0;
+            }
         }
 
         private void ApplyToSelected(string propName, int value)
@@ -1619,6 +1749,7 @@ namespace Wayfu.Lamkn
         {
             if (p == null) return;
             if (p.propertyType == SerializedPropertyType.Enum) p.enumValueIndex = value;
+            else if (p.propertyType == SerializedPropertyType.Boolean) p.boolValue = value != 0;
             else p.intValue = value;
         }
 
@@ -1657,6 +1788,8 @@ namespace Wayfu.Lamkn
             var c = cells.GetArrayElementAtIndex(cellIdx);
             EditorGUILayout.PropertyField(c.FindPropertyRelative("Color"), new GUIContent("Màu"));
             EditorGUILayout.PropertyField(c.FindPropertyRelative("BlockStackCt"), new GUIContent("Stack"));
+            EditorGUILayout.PropertyField(c.FindPropertyRelative("Shootable"),
+                new GUIContent("Bắn được", "Tắt = gun không bao giờ ngắm cell này (khung giữa vẽ gạch X)."));
 
             var typeProp = c.FindPropertyRelative("Type");
             EditorGUILayout.PropertyField(typeProp, new GUIContent("Type"));
@@ -1703,14 +1836,33 @@ namespace Wayfu.Lamkn
                 EditorGUILayout.EndHorizontal();
             }
 
+            // Thêm N mục cùng lúc; MÀU MẶC ĐỊNH = màu ô spawner. Clear = xoá cả queue.
+            int spawnerColor = cell.FindPropertyRelative("Color").enumValueIndex;
             EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("+ Cell sau"))
+            _queueAddCount = Mathf.Clamp(EditorGUILayout.IntField(_queueAddCount, GUILayout.Width(40)), 1, 999);
+            if (GUILayout.Button($"+ {_queueAddCount} cell (màu ô spawner)"))
             {
-                var e = q.GetArrayElementAtIndex(AddArray(q));
-                e.FindPropertyRelative("Color").enumValueIndex = _paintColor != TypeColor.None ? (int)_paintColor : (int)_genColor;
-                e.FindPropertyRelative("BlockStackCt").intValue = Mathf.Max(1, _target.HoleCapacity);
+                int defStack = Mathf.Max(1, _target.HoleCapacity);
+                for (int k = 0; k < _queueAddCount; k++)
+                {
+                    var e = q.GetArrayElementAtIndex(AddArray(q));
+                    e.FindPropertyRelative("Color").enumValueIndex = spawnerColor;
+                    e.FindPropertyRelative("BlockStackCt").intValue = defStack;
+                }
             }
-            if (GUILayout.Button("Clear")) q.arraySize = 0;
+            if (GUILayout.Button("Clear", GUILayout.Width(50))) q.arraySize = 0;
+            EditorGUILayout.EndHorizontal();
+
+            // Sửa HÀNG LOẠT cả queue: đặt màu / stack cho MỌI mục đang có.
+            EditorGUILayout.BeginHorizontal();
+            _queueBulkColor = (TypeColor)EditorGUILayout.EnumPopup(_queueBulkColor, GUILayout.Width(80));
+            if (GUILayout.Button("Màu cả queue", GUILayout.Width(100)))
+                for (int i = 0; i < q.arraySize; i++)
+                    q.GetArrayElementAtIndex(i).FindPropertyRelative("Color").enumValueIndex = (int)_queueBulkColor;
+            _queueBulkStack = Mathf.Max(1, EditorGUILayout.IntField(_queueBulkStack, GUILayout.Width(40)));
+            if (GUILayout.Button("Stack cả queue", GUILayout.Width(100)))
+                for (int i = 0; i < q.arraySize; i++)
+                    q.GetArrayElementAtIndex(i).FindPropertyRelative("BlockStackCt").intValue = _queueBulkStack;
             EditorGUILayout.EndHorizontal();
 
             if (pend >= 0) ApplyOp(q, pend, op);
@@ -2130,25 +2282,41 @@ namespace Wayfu.Lamkn
             var cfg = GlobalConfigManager.Instance;
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("Paint Color", GUILayout.Width(72));
-            if (GUILayout.Toggle(_paintColor == TypeColor.None && !_eraseMode, "None", EditorStyles.miniButton, GUILayout.Width(44)))
-            { _paintColor = TypeColor.None; _eraseMode = false; }
+            if (GUILayout.Toggle(_paintColor == TypeColor.None && !_eraseMode && !_shootMode, "None", EditorStyles.miniButton, GUILayout.Width(44)))
+            { _paintColor = TypeColor.None; _eraseMode = false; _shootMode = false; }
 
             var bg = GUI.backgroundColor;
             if (cfg != null && cfg.listColor != null)
                 foreach (var co in cfg.listColor)
                 {
                     if (co == null || co.typeColor == TypeColor.None) continue;
-                    bool sel = _paintColor == co.typeColor && !_eraseMode;
+                    bool sel = _paintColor == co.typeColor && !_eraseMode && !_shootMode;
                     GUI.backgroundColor = GlobalConfigManager.ColorOf(co.typeColor);
                     if (GUILayout.Toggle(sel, sel ? "●" : "", EditorStyles.miniButton, GUILayout.Width(24)) && !sel)
-                    { _paintColor = co.typeColor; _eraseMode = false; }
+                    { _paintColor = co.typeColor; _eraseMode = false; _shootMode = false; }
                 }
             GUI.backgroundColor = bg;
             // Erase: bật lên thì click/rê vào block là xoá (thành lỗ). Tô màu và Erase loại trừ nhau.
             GUI.backgroundColor = _eraseMode ? new Color(1f, 0.4f, 0.4f) : bg;
             if (GUILayout.Toggle(_eraseMode, "Erase", EditorStyles.miniButton, GUILayout.Width(48)) != _eraseMode)
-            { _eraseMode = !_eraseMode; if (_eraseMode) _paintColor = TypeColor.None; }
+            { _eraseMode = !_eraseMode; if (_eraseMode) { _paintColor = TypeColor.None; _shootMode = false; } }
             GUI.backgroundColor = bg;
+            EditorGUILayout.EndHorizontal();
+
+            // Shoot paint: tô cờ "bắn được / không bắn được" cho cell bằng chuột.
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Shoot", GUILayout.Width(72));
+            GUI.backgroundColor = _shootMode ? new Color(0.4f, 0.9f, 1f) : bg;
+            if (GUILayout.Toggle(_shootMode, new GUIContent("Shoot paint",
+                "Bật rồi click/rê vào cell để đặt cờ Bắn được theo lựa chọn bên phải. Cell KHÔNG bắn được vẽ gạch X."),
+                EditorStyles.miniButton, GUILayout.Width(80)) != _shootMode)
+            { _shootMode = !_shootMode; if (_shootMode) { _paintColor = TypeColor.None; _eraseMode = false; } }
+            GUI.backgroundColor = bg;
+            using (new EditorGUI.DisabledScope(!_shootMode))
+            {
+                if (GUILayout.Toggle(_shootMode && !_shootValue, "Không bắn", EditorStyles.miniButton, GUILayout.Width(70))) _shootValue = false;
+                if (GUILayout.Toggle(_shootMode && _shootValue, "Bắn được", EditorStyles.miniButton, GUILayout.Width(70))) _shootValue = true;
+            }
             EditorGUILayout.EndHorizontal();
 
             if (cfg == null)
@@ -2156,7 +2324,9 @@ namespace Wayfu.Lamkn
                 EditorGUILayout.HelpBox("Không tìm thấy GlobalConfigManager → không có bảng màu.", MessageType.Warning);
                 return;
             }
-            EditorGUILayout.HelpBox(_eraseMode
+            EditorGUILayout.HelpBox(_shootMode
+                ? $"Đang SHOOT PAINT ({(_shootValue ? "Bắn được" : "KHÔNG bắn")}): click/rê vào cell để đặt cờ. Cell không bắn được vẽ gạch X (gun bỏ qua, không tính vào điều kiện thắng)."
+                : _eraseMode
                 ? "Đang ERASE: click vào block để XOÁ (stack = 0 → lỗ), hoặc GIỮ CHUỘT RÊ qua nhiều block để xoá cả vùng. Tô màu vào lại để phục hồi."
                 : _paintColor == TypeColor.None
                 ? "Paint = None: click cell/gun để XEM & SỬA thông số (không đổi màu) · kéo chuột = quét chọn nhiều cell."

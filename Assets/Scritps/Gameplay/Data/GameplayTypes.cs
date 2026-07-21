@@ -615,6 +615,9 @@ namespace Wayfu.Lamkn
         [Tooltip("Số block xếp chồng trong cell (~ BlockStackCt). 0 = ô LỖ: không dựng cell, và không cell " +
                  "nào được dồn/refill vào đó — grid giữ nguyên hình, chỉ thủng đúng ô này.")]
         [Min(0)] public int BlockStackCt = 3;
+        [Tooltip("Gun có được BẮN cell này không. Tắt = cell không bao giờ bị ngắm (dù lộ ra) — chỉ bị dọn " +
+                 "gián tiếp khi dồn. Dùng để custom chỉ MỘT SỐ cell của grid là bắn được.")]
+        public bool Shootable = true;
         [Tooltip("Normal = phá xong biến mất. Spawner = còn hàng đợi phía sau, phá xong thì đẩy cell kế ra. " +
                  "Spawner8 = nhả vào ô trống ở 8 ô xung quanh. SpawnerLine = nhả theo 1 ĐƯỜNG (dọc/ngang " +
                  "theo hướng mũi tên) tới tối đa Reach ô.")]

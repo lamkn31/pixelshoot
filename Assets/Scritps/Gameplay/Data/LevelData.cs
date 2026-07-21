@@ -83,6 +83,8 @@ namespace Wayfu.Lamkn
                     foreach (var c in grid.Cells)
                     {
                         if (c == null) continue;
+                        // Bắn được theo VỊ TRÍ ô: cell ở ô không bắn được vẫn dồn sang ô bắn được → vẫn cần
+                        // đạn khớp, tính bình thường.
                         if (c.BlockStackCt > 0)
                         {
                             d.TryGetValue(c.Color, out var v);

@@ -52,6 +52,12 @@ namespace Wayfu.Lamkn
             /// biến mất: 2 spawner KHÔNG được nhả cell vào ô của nhau, kể cả khi ô đó đã hết queue (yêu cầu).
             /// </summary>
             public readonly List<bool[]> SpawnerCells = new List<bool[]>();
+            /// <summary>
+            /// [row][index] — false = Ô này KHÔNG bắn được (theo VỊ TRÍ, không theo cell). Cell nào đang
+            /// nằm ở ô này thì gun bỏ qua; cell dồn sang ô bắn được thì lại bắn được. Đọc từ
+            /// BlockCellData.Shootable của ô lúc Build.
+            /// </summary>
+            public readonly List<bool[]> Shootable = new List<bool[]>();
             public readonly List<SpawnerSource> Sources = new List<SpawnerSource>();
             public Transform Root;                 // node cha để gắn cell (kể cả cell refill)
             public Queue<PendingBlockData> Pending; // hàng đợi refill mức GRID (lấp hàng sâu nhất)
@@ -88,9 +94,12 @@ namespace Wayfu.Lamkn
                     var row = new BlockCell[count];
                     var holes = new bool[count];
                     var spawners = new bool[count];
+                    var shootable = new bool[count];
                     for (int e = 0; e < count; e++)
                     {
                         var cellData = grid.GetCell(r, e);
+                        // Bắn được theo VỊ TRÍ ô (không theo cell): đọc từ data của ô. Ô không có data coi là bắn được.
+                        shootable[e] = cellData == null || cellData.Shootable;
                         // Designer xoá ô này (stack <= 0) → LỖ vĩnh viễn: không dựng cell, và về sau cũng
                         // không cho cell nào dồn/refill vào (xem AdvanceOnce, TryRefill).
                         if (cellData == null || cellData.BlockStackCt <= 0) { holes[e] = true; continue; }
@@ -128,6 +137,7 @@ namespace Wayfu.Lamkn
                     gr.Rows.Add(row);
                     gr.Holes.Add(holes);
                     gr.SpawnerCells.Add(spawners);
+                    gr.Shootable.Add(shootable);
                 }
                 gr.HasIndicators = gr.Sources.Count > 0; // mồi cờ trước, Refresh tự cập nhật lại sau
                 RefreshSpawnerIndicators(gr);
@@ -308,6 +318,7 @@ namespace Wayfu.Lamkn
                     {
                         var cell = row[e];
                         if (cell == null || cell.Color != color) continue;
+                        if (!IsPositionShootable(gr, r, e)) continue; // Ô này không bắn được (theo vị trí)
                         if (cell.Indestructible) continue; // Spawner8 ở giữa: không bao giờ bị ngắm
                         if (cell == exclude) continue;  // nòng bên kia đang bắn cell này → không bắn trùng
                         if (cell.PendingEntry) continue; // đang TRƯỢT (nhả mới / dồn hàng) → chưa cho ngắm
@@ -347,7 +358,7 @@ namespace Wayfu.Lamkn
                 {
                     var row = gr.Rows[r];
                     for (int e = 0; e < row.Length; e++)
-                        if (row[e] != null && row[e].Color == color && IsShootable(gr, r, e)) return true;
+                        if (row[e] != null && IsPositionShootable(gr, r, e) && row[e].Color == color && IsShootable(gr, r, e)) return true;
                 }
             return false;
         }
@@ -380,38 +391,26 @@ namespace Wayfu.Lamkn
         // Arc-ArcLength → cột lệch (4/5/6) nên chỉ dồn được theo HÀNG như cũ.
         private void CollapseFront(GridRuntime gr)
         {
-            // Grid bị path bao nhiều mặt (ShootableEdges): dùng Spawner8 làm cơ chế dồn (lan tỏa), KHÔNG dồn
-            // dọc toàn grid. Grid thường thì dồn theo ƯU TIÊN các cấp dưới đây.
-            bool multiSide = gr.Data.ShootableEdges != GridEdges.None;
-
-            // Lặp tới khi ổn định. ƯU TIÊN DỒN cho 1 ô chịu nhiều spawner: 1) SPAWNER THƯỜNG (dồn dọc về
-            // hàng 0 / 2D + refill ô gốc — luôn là mặc định, không giới hạn reach) → 2) SPAWNER LINE (dồn
-            // tuần tự dọc đường, giới hạn Reach) → 3) SPAWNER8 (nhả kề + lan tỏa, giới hạn Reach). Cấp dưới
-            // CHỈ chạy ở lượt mà cấp trên KHÔNG còn gì làm → cấp trên vét cạn & giành ô trước; ô nào Line/8
-            // reach KHÔNG tới thì rơi về mặc định spawner thường.
+            // Lặp tới khi ổn định. Mỗi vòng chạy CẢ 3 cấp — nhưng quyền lấp Ô TRANH CHẤP là PER-Ô theo
+            // KHOẢNG CÁCH (OwnerOf): ô chịu ảnh hưởng của nhiều spawner thì thuộc về nguồn GẦN nhất
+            // (tính bằng số Ô); bằng khoảng cách thì Spawner thường > SpawnerLine > Spawner8. Nguồn cạn
+            // queue mất ảnh hưởng → nguồn còn lại tiếp quản ô ("spawner hết thì mới đến line/8"). Mỗi cấp
+            // trước khi lấp 1 ô đều hỏi OwnerOf, nên thứ tự chạy dưới đây không còn quyết định thắng thua.
+            //   1) DỒN CELL HIỆN CÓ: dọc (→ ngang nếu Collapse2D) + refill ô gốc spawner thường + đáy.
+            //   2) SPAWNER LINE: dồn tuần tự dọc đường (giới hạn Reach).
+            //   3) SPAWNER8: nhả kề + lan tỏa (giới hạn Reach).
             for (int guard = 0; guard < 64; guard++)
             {
                 bool moved = false, fed = false;
 
-                // Cấp 1 — dồn thường: dồn cell hiện có (dọc/2D) + refill ô gốc spawner thường + đáy.
-                if (!multiSide)
-                {
-                    moved = gr.Data.Collapse2D ? AdvanceCorner2D(gr) : AdvanceOnce(gr);
-                    fed = FeedRegular(gr) | TryRefill(gr);
-                }
-
-                if (!moved && !fed)
-                {
-                    // Cấp 2 — SpawnerLine (dọc trước, ngang sau; giới hạn Reach).
-                    bool lineFed = FeedLine(gr, verticalPass: true) | FeedLine(gr, verticalPass: false);
-                    fed = lineFed;
-                    if (!lineFed)
-                    {
-                        // Cấp 3 — Spawner8: nhả kề + lan tỏa (giới hạn Reach).
-                        fed = FeedEightWayAll(gr);
-                        moved = CascadeTowardSpawners(gr);
-                    }
-                }
+                // Cấp 1
+                moved |= gr.Data.Collapse2D ? AdvanceCorner2D(gr) : AdvanceOnce(gr);
+                fed |= FeedRegular(gr) | TryRefill(gr);
+                // Cấp 2 — SpawnerLine (dọc trước, ngang sau).
+                fed |= FeedLine(gr, verticalPass: true) | FeedLine(gr, verticalPass: false);
+                // Cấp 3 — Spawner8.
+                fed |= FeedEightWayAll(gr);
+                moved |= CascadeTowardSpawners(gr);
 
                 if (!moved && !fed) break;
             }
@@ -457,11 +456,85 @@ namespace Wayfu.Lamkn
         private static bool CanEnter(GridRuntime gr, int row, int col, BlockCell[] rowCells)
         {
             if (col < 0 || col >= rowCells.Length || rowCells[col] != null) return false;
-            return !IsHole(gr, row, col);
+            // KHÔNG cho dồn cell vào Ô GỐC spawner: để dành ô đó cho spawner tự nhả queue (nếu để collapse
+            // lấp bằng cell dồn từ sau thì FeedRegular thấy ô đầy → spawner thường không bao giờ nhả queue).
+            return !IsHole(gr, row, col) && !IsSpawnerCell(gr, row, col);
         }
 
         private static bool IsHole(GridRuntime gr, int row, int col) =>
             row >= 0 && row < gr.Holes.Count && col >= 0 && col < gr.Holes[row].Length && gr.Holes[row][col];
+
+        // Viết theo ĐÚNG thứ tự ưu tiên khi hoà khoảng cách: Regular < Line < Eight (so bằng "<").
+        private enum FillOwner { None, Regular, Line, Eight }
+
+        /// <summary>
+        /// Nguồn nào SỞ HỮU ô trống (r,c) khi nhiều spawner cùng ảnh hưởng: nguồn GẦN nhất theo KHOẢNG
+        /// CÁCH Ô thắng — Spawner thường đo dọc CỘT nó nhả lên (src.Row − r), SpawnerLine đo số bước dọc
+        /// đường nhả (trong Reach), Spawner8 đo Chebyshev (trong Reach). BẰNG khoảng cách → Spawner
+        /// thường > SpawnerLine > Spawner8. Nguồn cạn queue không còn ảnh hưởng → nguồn còn lại tiếp
+        /// quản ô. Ảnh hưởng bị CẮT khi có lỗ / ô gốc spawner chắn giữa đường (cell không chảy xuyên qua).
+        /// </summary>
+        private static FillOwner OwnerOf(GridRuntime gr, int r, int c)
+        {
+            int bestDist = int.MaxValue;
+            FillOwner best = FillOwner.None;
+
+            foreach (var src in gr.Sources)
+            {
+                if (src.Queue.Count == 0) continue;
+                int d; FillOwner kind;
+                if (src.Line)
+                {
+                    if (src.StepRow == 0 && src.StepCol == 0) continue;
+                    d = LineStepsTo(gr, src, r, c);
+                    kind = FillOwner.Line;
+                }
+                else if (src.EightWay)
+                {
+                    d = Mathf.Max(Mathf.Abs(src.Row - r), Mathf.Abs(src.Col - c));
+                    if (d < 1 || (src.Reach > 0 && d > src.Reach)) continue;
+                    kind = FillOwner.Eight;
+                }
+                else
+                {
+                    // Spawner thường: nhả vào ô gốc rồi cell trôi DỌC CỘT về phía path (hàng nhỏ hơn).
+                    if (c != src.Col || r >= src.Row) continue;
+                    bool blocked = false;
+                    for (int rr = r + 1; rr < src.Row && !blocked; rr++)
+                        blocked = c >= gr.Rows[rr].Length || IsHole(gr, rr, c) || IsSpawnerCell(gr, rr, c);
+                    if (blocked) continue;
+                    d = src.Row - r;
+                    kind = FillOwner.Regular;
+                }
+                if (d > 0 && (d < bestDist || (d == bestDist && kind < best))) { bestDist = d; best = kind; }
+            }
+            return best;
+        }
+
+        // Số bước từ nguồn Line tới (r,c) DỌC theo đường nhả của nó (1..maxStep); 0 = không nằm trên
+        // đường / ngoài Reach / bị lỗ-ô spawner chắn trước khi tới nơi.
+        private static int LineStepsTo(GridRuntime gr, SpawnerSource src, int r, int c)
+        {
+            int span = gr.Rows.Count;
+            foreach (var row in gr.Rows) if (row.Length > span) span = row.Length;
+            int maxStep = src.Reach > 0 ? Mathf.Min(src.Reach, span) : span;
+            for (int s = 1; s <= maxStep; s++)
+            {
+                int rr = src.Row + src.StepRow * s, cc = src.Col + src.StepCol * s;
+                if (rr < 0 || rr >= gr.Rows.Count || cc < 0 || cc >= gr.Rows[rr].Length) return 0;
+                if (rr == r && cc == c) return s;
+                if (IsHole(gr, rr, cc) || IsSpawnerCell(gr, rr, cc)) return 0; // băng chuyền không xuyên qua
+            }
+            return 0;
+        }
+
+        // Dồn cấp 1 (trọng lực — cách dồn phục vụ Spawner thường) chỉ được lấp ô KHÔNG thuộc về
+        // SpawnerLine/Spawner8 gần hơn: ô của nguồn nào thì nguồn đó tự dồn/nhả theo cách của nó.
+        private static bool GravityMayFill(GridRuntime gr, int r, int c)
+        {
+            var owner = OwnerOf(gr, r, c);
+            return owner != FillOwner.Line && owner != FillOwner.Eight;
+        }
 
         // Dồn 1 bước: cell ở hàng r tiến lên ô CHẶN nó ở hàng r-1 nếu ô đó trống — dùng đúng map góc của
         // FrontIndices. Cột thẳng (Rect / Arc-Uniform) → 1:1. Cột lệch (Arc-ArcLength) → cell giữa có 2 ô
@@ -483,8 +556,8 @@ namespace Wayfu.Lamkn
                     // Lỗ do designer xoá KHÔNG phải chỗ trống để dồn vào — grid 3x3 xoá ô (0,0) thì cột 0
                     // dừng ở hàng 1, không bao giờ lấp kín hàng 0.
                     int slot = -1;
-                    if (CanEnter(gr, r - 1, a, prev)) slot = a;
-                    else if (CanEnter(gr, r - 1, b, prev)) slot = b;
+                    if (CanEnter(gr, r - 1, a, prev) && GravityMayFill(gr, r - 1, a)) slot = a;
+                    else if (CanEnter(gr, r - 1, b, prev) && GravityMayFill(gr, r - 1, b)) slot = b;
                     if (slot < 0) continue; // ô trước còn cell / là lỗ → bị chặn, chưa dồn được
 
                     prev[slot] = cell;
@@ -499,13 +572,12 @@ namespace Wayfu.Lamkn
         }
 
         // Dồn 2 chiều về GÓC (hàng 0, index 0) với ƯU TIÊN TUYỆT ĐỐI: VÉT CẠN dồn DỌC toàn grid trước, rồi
-        // mới NGANG, rồi CHÉO. Trả về ngay sau hướng đầu tiên còn dồn được → guard-loop lặp lại sẽ tiếp tục
-        // dọc cho tới hết mới sang ngang (không để mỗi ô tự chọn greedy ngang khi chưa vét xong dọc).
+        // mới NGANG. Trả về ngay sau hướng đầu tiên còn dồn được → guard-loop lặp lại sẽ tiếp tục dọc cho tới
+        // hết mới sang ngang. KHÔNG dồn CHÉO — chéo là việc của riêng Spawner8 (nhả 8 hướng trong Reach).
         private bool AdvanceCorner2D(GridRuntime gr)
         {
             if (AdvanceDir(gr, 1, 0)) return true; // 1. DỌC: kéo từ ô ngay trên (r+1, e)
             if (AdvanceDir(gr, 0, 1)) return true; // 2. NGANG: kéo từ ô bên phải (r, e+1)
-            if (AdvanceDir(gr, 1, 1)) return true; // 3. CHÉO: kéo từ (r+1, e+1)
             return false;
         }
 
@@ -520,21 +592,25 @@ namespace Wayfu.Lamkn
                 {
                     if (row[e] != null) continue;             // đã có cell
                     if (IsHole(gr, r, e) || IsSpawnerCell(gr, r, e)) continue; // lỗ/spawner: không lấp
+                    if (!GravityMayFill(gr, r, e)) continue;  // ô thuộc SpawnerLine/Spawner8 gần hơn
                     if (TryPull(gr, r, e, r + dr, e + dc)) moved = true;
                 }
             }
             return moved;
         }
 
-        // Kéo cell từ ô nguồn (sr,sc) vào ô trống (r,e) nếu nguồn hợp lệ (trong grid, có cell di chuyển được,
-        // không phải nguồn bất tử / ô spawner). true = đã kéo.
+        // Kéo cell từ ô nguồn (sr,sc) vào ô trống (r,e) nếu nguồn hợp lệ (trong grid, có cell di chuyển
+        // được, không phải nguồn bất tử). true = đã kéo. CHÚ Ý: không chặn theo IsSpawnerCell — cell
+        // THƯỜNG đang đứng ở ô gốc Spawner thường (vừa nhả ra) PHẢI kéo đi được, không thì ô gốc không
+        // bao giờ trống → FeedRegular không bao giờ nhả queue → spawner thường tắc vĩnh viễn trên grid
+        // Collapse2D. Nguồn tĩnh (Spawner8/SpawnerLine) đã có Indestructible giữ chân.
         private bool TryPull(GridRuntime gr, int r, int e, int sr, int sc)
         {
             if (sr < 0 || sr >= gr.Rows.Count) return false;
             var srow = gr.Rows[sr];
             if (sc < 0 || sc >= srow.Length) return false;
             var cell = srow[sc];
-            if (cell == null || cell.Indestructible || IsSpawnerCell(gr, sr, sc)) return false;
+            if (cell == null || cell.Indestructible) return false;
             srow[sc] = null;
             gr.Rows[r][e] = cell;
             cell.SetColumn(e);
@@ -563,6 +639,8 @@ namespace Wayfu.Lamkn
                     int dE = DistToNearestSpawner(gr, r, c);
                     if (dE <= 0) continue;
                     if (!WithinSpawnerReach(gr, r, c)) continue;              // ngoài Reach của mọi Spawner8
+                    // Ô thuộc Spawner thường / SpawnerLine gần hơn → nguồn đó tự lấp, lan tỏa không đụng.
+                    if (OwnerOf(gr, r, c) != FillOwner.Eight) continue;
 
                     // Chọn neighbor có cell di chuyển được và GẦN spawner hơn ô này (ưu tiên dọc/ngang trước
                     // chéo nhờ thứ tự EightNeighbors + so sánh chặt "<").
@@ -679,6 +757,9 @@ namespace Wayfu.Lamkn
                     if (r < 0 || r >= gr.Rows.Count || c < 0 || c >= gr.Rows[r].Length) continue; // ngoài grid
                     if (IsHole(gr, r, c) || IsSpawnerCell(gr, r, c)) continue; // lỗ/ô spawner: bỏ
                     if (gr.Rows[r][c] != null) continue;                        // đã có cell
+                    // Ô này thuộc về nguồn khác GẦN hơn (vd Spawner thường cùng khoảng cách trở xuống)
+                    // → để nguồn đó lấp theo cách của nó, line không đụng vào.
+                    if (OwnerOf(gr, r, c) != FillOwner.Line) continue;
 
                     if (step == 1)
                     {
@@ -741,6 +822,8 @@ namespace Wayfu.Lamkn
                     int c = NeighborCol(gr, src.Col + dc, gr.Rows[r].Length);
                     if (IsSpawnerCell(gr, r, c)) continue;           // chừa ô của spawner khác (yêu cầu)
                     if (!CanEnter(gr, r, c, gr.Rows[r])) continue;
+                    // Ô kề này thuộc nguồn khác gần hơn/ưu tiên hơn (Spawner thường, SpawnerLine) → chừa.
+                    if (OwnerOf(gr, r, c) != FillOwner.Eight) continue;
 
                     // Nhả MÀU HIỆN TẠI ra ô kề (cell mới trượt từ ô gốc ra), rồi ô gốc chuyển sang màu kế.
                     if (EmitHead(gr, src, r, c, origin)) { fed = true; UpdateStaticSourceDisplay(gr, src); }
@@ -824,6 +907,11 @@ namespace Wayfu.Lamkn
             row >= 0 && row < gr.SpawnerCells.Count && col >= 0 && col < gr.SpawnerCells[row].Length
             && gr.SpawnerCells[row][col];
 
+        // Ô (row, col) có BẮN được không (theo VỊ TRÍ). Ngoài phạm vi = bắn được.
+        private static bool IsPositionShootable(GridRuntime gr, int row, int col) =>
+            row < 0 || row >= gr.Shootable.Count || col < 0 || col >= gr.Shootable[row].Length
+            || gr.Shootable[row][col];
+
         /// <summary>
         /// Nhả mục hợp lệ kế tiếp trong <paramref name="queue"/> ra ô (row, col): dựng cell ở
         /// <paramref name="spawnPos"/> rồi trượt về đúng ô. false = hàng đợi không còn mục hợp lệ.
@@ -869,6 +957,7 @@ namespace Wayfu.Lamkn
             for (int e = 0; e < count && gr.Pending.Count > 0; e++)
             {
                 if (row[e] != null || IsHole(gr, rowIndex, e)) continue; // lỗ designer xoá → không lấp
+                if (!GravityMayFill(gr, rowIndex, e)) continue; // ô thuộc SpawnerLine/Spawner8: nguồn đó lấp
                 var p = gr.Pending.Dequeue();
                 if (p == null || p.BlockStackCt <= 0) continue;
 
@@ -903,6 +992,8 @@ namespace Wayfu.Lamkn
                     // Queue của nguồn, đã cộng ở vòng dưới → cộng cả 2 là đếm gấp đôi.
                     foreach (var row in gr.Rows)
                         foreach (var cell in row)
+                            // Bắn được là theo VỊ TRÍ: cell ở ô không bắn được vẫn dồn sang ô bắn được để phá →
+                            // VẪN tính vào điều kiện thắng (chỉ ô gốc spawner bất tử mới loại).
                             if (cell != null && !cell.Indestructible) s += cell.StackCount;
                     // Block chưa nhả ra: Spawner thường = các mục refill sau ô gốc; Spawner8 = cả sequence
                     // (gồm màu ô gốc đang hiển thị). Đều là block "chưa clear".
