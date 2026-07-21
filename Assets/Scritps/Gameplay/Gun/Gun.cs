@@ -34,6 +34,8 @@ namespace Wayfu.Lamkn
         [Tooltip("Text đếm số đạn — gán sẵn trên prefab ('Text (TMP)'). Bỏ trống sẽ tự tìm TMP_Text " +
                  "trong children.")]
         [SerializeField] private TMP_Text bulletLabel;
+        [Tooltip("Material dùng khi gun ẨN chưa ra vị trí đầu (che màu thật). Bỏ trống thì gun ẩn vẫn hiện màu.")]
+        [SerializeField] private Material hiddenMaterial;
 
         /// <summary>Arc-length hiện tại trên path — PathManager đọc để giữ khoảng cách giữa các gun.</summary>
         public float PathDistance => _follower != null ? _follower.CurrentDistance : 0f;
@@ -46,6 +48,7 @@ namespace Wayfu.Lamkn
         private Pooler<Gun> _pool;
         private RoundedPolylineFollower _follower;
         private int _lastLap;             // vòng path đã chạy, mốc để mở khoá bắn
+        private bool _atFront;            // gun đang ở VỊ TRÍ ĐẦU (index 0) của slot → gun ẩn lộ màu thật
 
         /// <summary>
         /// Một bên nòng. Mỗi bên có target + nhịp bắn RIÊNG và quạt hướng ra sườn gun (±X local), nên
@@ -120,8 +123,9 @@ namespace Wayfu.Lamkn
 
         public void Init(GunData data, GunFireConfig fire)
         {
-            Data = new GunData { Color = data.Color, CountBullet = data.CountBullet };
+            Data = new GunData { Color = data.Color, CountBullet = data.CountBullet, Hidden = data.Hidden };
             _fire = fire;
+            _atFront = false; // item pooled tái dùng: mặc định CHƯA ở đầu; slot gọi SetAtFront sau Fill
 
             // Reset trạng thái (item pooled có thể tái dùng).
             _lastLap = 0;
@@ -139,10 +143,7 @@ namespace Wayfu.Lamkn
 
             // Material lấy từ GlobalConfigManager theo TypeColor (không tô material.color nữa).
             // sharedMaterial chỉ thay slot 0 — 'machine' có 2 slot, slot 1 (viền/chi tiết) giữ nguyên.
-            if (_renderers == null) CollectRenderers();
-            var mat = GlobalConfigManager.MaterialOf(Data.Color, TypeObject.Gun);
-            if (mat != null)
-                foreach (var r in _renderers) if (r != null) r.sharedMaterial = mat;
+            ApplyColorVisual();
 
             EnsureLabel();
             UpdateLabel();
@@ -153,6 +154,25 @@ namespace Wayfu.Lamkn
         }
 
         public void SetSlot(GunSlot s) => Slot = s;
+
+        // Tô material cho gun: gun ẨN & CHƯA ra vị trí đầu → material 'hidden' (che màu); còn lại = màu thật.
+        private void ApplyColorVisual()
+        {
+            if (_renderers == null) CollectRenderers();
+            Material mat = Data != null && Data.Hidden && !_atFront && hiddenMaterial != null
+                ? hiddenMaterial
+                : GlobalConfigManager.MaterialOf(Data != null ? Data.Color : TypeColor.None, TypeObject.Gun);
+            if (mat != null)
+                foreach (var r in _renderers) if (r != null) r.sharedMaterial = mat;
+        }
+
+        /// <summary>Slot báo gun này có đang ở VỊ TRÍ ĐẦU (index 0) không → gun ẩn lộ/che màu theo đó.</summary>
+        public void SetAtFront(bool front)
+        {
+            if (_atFront == front) return;
+            _atFront = front;
+            if (Data != null && Data.Hidden) ApplyColorVisual();
+        }
 
         // Được gọi từ GunClickRelay (collider ở child) hoặc trực tiếp nếu collider nằm cùng GO.
         public void HandleClick()

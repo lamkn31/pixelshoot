@@ -46,6 +46,11 @@ namespace Wayfu.Lamkn
         public void OnBoardChanged()
         {
             if (State != GameState.Playing) return;
+            // Tổng block đã phá trong màn → tan băng (cell + obstacle băng) khi đạt ngưỡng.
+            int left = GridBlockManager.Instance != null ? GridBlockManager.Instance.RemainingBlocks : 0;
+            int destroyed = Mathf.Max(0, _blocksAtStart - left);
+            GridBlockManager.Instance?.UpdateIce(destroyed);
+            Level?.UpdateObstacleMelt(destroyed);
             if (CheckWin()) return;
             CheckLose();
         }

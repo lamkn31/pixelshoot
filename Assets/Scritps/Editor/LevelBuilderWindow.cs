@@ -109,6 +109,8 @@ namespace Wayfu.Lamkn
         private TypeColor _multiColor = TypeColor.Red;
         private BlockCellType _multiType = BlockCellType.Normal;
         private bool _multiShootable = true;
+        private bool _multiIced;
+        private int _multiIceThreshold = 10;
         // Thao tác HÀNG LOẠT cho queue của spawner: thêm N mục, đặt màu/stack cả queue.
         private int _queueAddCount = 3;
         private TypeColor _queueBulkColor = TypeColor.Red;
@@ -753,6 +755,12 @@ namespace Wayfu.Lamkn
                                 Line(new Vector2(cellRect.xMax, cellRect.y), new Vector2(cellRect.x, cellRect.yMax));
                                 DrawOutline(cellRect, new Color(0f, 0f, 0f, 0.9f), area);
                             }
+                            // Băng phủ: lớp xanh băng mờ + viền xanh (cell chưa bắn được cho tới khi tan).
+                            if (cell.Iced)
+                            {
+                                FillRect(cellRect, new Color(0.5f, 0.85f, 1f, 0.35f));
+                                DrawOutline(cellRect, new Color(0.4f, 0.8f, 1f, 0.95f), area);
+                            }
                             // Viền vàng = cell đang chọn; viền cam = cell Spawner (còn hàng đợi phía sau).
                             if (IsCellSelected(gi, flatIdx)) DrawOutline(cellRect, Color.yellow, area);
                             else if (isSpawner) DrawOutline(cellRect, SpawnerCol, area);
@@ -883,8 +891,10 @@ namespace Wayfu.Lamkn
                         if (!Front(wp)) continue;
                         Vector2 gp = Proj(wp); float sz = PixSize(wp, 0.6f);
                         var gunRect = new Rect(gp.x - sz / 2, gp.y - sz / 2, sz, sz);
-                        FillRect(gunRect, GlobalConfigManager.ColorOf(g.Color));
-                        if (area.Contains(gp)) GUI.Label(gunRect, g.CountBullet.ToString(), lbl);
+                        // Gun ẨN & CHƯA ở vị trí đầu (index 0) → vẽ xám (che màu) như lúc chơi.
+                        bool hiddenNow = g.Hidden && i != 0;
+                        FillRect(gunRect, hiddenNow ? new Color(0.45f, 0.45f, 0.48f) : GlobalConfigManager.ColorOf(g.Color));
+                        if (area.Contains(gp)) GUI.Label(gunRect, hiddenNow ? "?" : g.CountBullet.ToString(), lbl);
                         if (_selSlot == si && _selGun == i) DrawOutline(gunRect, Color.yellow, area);
                         // Vùng click gun — chọn xử lý ở HandleMarquee (click ngắn = chọn 1 gun).
                         if (Event.current.type == EventType.MouseDown || Event.current.type == EventType.MouseUp)
@@ -1953,6 +1963,16 @@ namespace Wayfu.Lamkn
             if (GUILayout.Button("Áp dụng", GUILayout.Width(70))) ApplyToSelected("Shootable", _multiShootable ? 1 : 0);
             EditorGUILayout.EndHorizontal();
 
+            // Băng phủ cả VÙNG đang chọn (cùng ngưỡng → tan cùng lúc).
+            EditorGUILayout.BeginHorizontal();
+            _multiIced = EditorGUILayout.Toggle("Băng phủ", _multiIced);
+            if (GUILayout.Button("Áp dụng", GUILayout.Width(70))) ApplyToSelected("Iced", _multiIced ? 1 : 0);
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.BeginHorizontal();
+            _multiIceThreshold = Mathf.Max(0, EditorGUILayout.IntField("Tan khi phá ≥", _multiIceThreshold));
+            if (GUILayout.Button("Áp dụng", GUILayout.Width(70))) ApplyToSelected("IceThreshold", _multiIceThreshold);
+            EditorGUILayout.EndHorizontal();
+
             // Thêm N mục queue vào MỌI ô đang chọn LÀ SPAWNER (màu = màu ô đó, stack = Hole Capacity).
             EditorGUILayout.BeginHorizontal();
             _multiQueueCount = Mathf.Clamp(EditorGUILayout.IntField("Queue +", _multiQueueCount), 1, 999);
@@ -2046,6 +2066,8 @@ namespace Wayfu.Lamkn
             var g = guns.GetArrayElementAtIndex(_selGun);
             EditorGUILayout.PropertyField(g.FindPropertyRelative("Color"), new GUIContent("Màu"));
             EditorGUILayout.PropertyField(g.FindPropertyRelative("CountBullet"), new GUIContent("Số lượng đạn"));
+            EditorGUILayout.PropertyField(g.FindPropertyRelative("Hidden"),
+                new GUIContent("Ẩn màu (hidden)", "Che màu (material hidden) cho tới khi gun ra VỊ TRÍ ĐẦU của slot."));
             EditorGUILayout.HelpBox("Ấn DELETE (chuột ở khung giữa) hoặc CLICK PHẢI vào gun để xoá.", MessageType.None);
             if (GUILayout.Button("Xoá gun này"))
             {
@@ -2053,6 +2075,18 @@ namespace Wayfu.Lamkn
                 _selGun = -1; _selSlot = -1;
             }
             EditorGUILayout.EndVertical();
+        }
+
+        // Băng phủ cell: bật Iced + ngưỡng tan (tổng block phá). Đặt CÙNG ngưỡng cho cả 1 vùng để tan cùng lúc,
+        // và khớp Melt-At của Obstacle băng đặt đè lên vùng đó.
+        private static void DrawIceFields(SerializedProperty c)
+        {
+            var iced = c.FindPropertyRelative("Iced");
+            EditorGUILayout.PropertyField(iced,
+                new GUIContent("Băng phủ", "Cell KHÔNG bắn được cho tới khi băng tan (phá đủ block trong màn)."));
+            if (iced.boolValue)
+                EditorGUILayout.PropertyField(c.FindPropertyRelative("IceThreshold"),
+                    new GUIContent("Tan khi phá ≥", "Tổng block phá trong màn để băng tan. Đặt = Melt-At của Obstacle băng phủ lên."));
         }
 
         private void DrawSelectedCell(int gridIdx, int cellIdx)
@@ -2073,6 +2107,7 @@ namespace Wayfu.Lamkn
             EditorGUILayout.PropertyField(c.FindPropertyRelative("BlockStackCt"), new GUIContent("Stack"));
             EditorGUILayout.PropertyField(c.FindPropertyRelative("Shootable"),
                 new GUIContent("Bắn được", "Tắt = gun không bao giờ ngắm cell này (khung giữa vẽ gạch X)."));
+            DrawIceFields(c);
 
             var typeProp = c.FindPropertyRelative("Type");
             EditorGUILayout.PropertyField(typeProp, new GUIContent("Type"));
@@ -2194,6 +2229,9 @@ namespace Wayfu.Lamkn
                     el.FindPropertyRelative("Scale").vector3Value = Vector3.one;
                 EditorGUILayout.PropertyField(el.FindPropertyRelative("Type"));
                 EditorGUILayout.PropertyField(el.FindPropertyRelative("Strength"));
+                EditorGUILayout.PropertyField(el.FindPropertyRelative("MeltAtDestroyed"),
+                    new GUIContent("Băng: tan khi phá ≥", "Obstacle băng tự biến mất khi TỔNG block phá trong màn ≥ số này "
+                        + "(0 = obstacle thường, không tan). Đặt bằng IceThreshold của vùng cell nó phủ."));
                 EditorGUILayout.EndVertical();
             }
             if (pend >= 0)

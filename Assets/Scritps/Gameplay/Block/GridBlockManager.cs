@@ -320,6 +320,7 @@ namespace Wayfu.Lamkn
                         if (cell == null || cell.Color != color) continue;
                         if (!IsPositionShootable(gr, r, e)) continue; // Ô này không bắn được (theo vị trí)
                         if (cell.Indestructible) continue; // Spawner8 ở giữa: không bao giờ bị ngắm
+                        if (cell.Frozen) continue;         // cell băng: chưa tan thì không bắn được
                         if (cell == exclude) continue;  // nòng bên kia đang bắn cell này → không bắn trùng
                         if (cell.PendingEntry) continue; // đang TRƯỢT (nhả mới / dồn hàng) → chưa cho ngắm
                         if (!IsShootableFromGun(gr, r, e, from)) continue;
@@ -358,7 +359,7 @@ namespace Wayfu.Lamkn
                 {
                     var row = gr.Rows[r];
                     for (int e = 0; e < row.Length; e++)
-                        if (row[e] != null && IsPositionShootable(gr, r, e) && row[e].Color == color && IsShootable(gr, r, e)) return true;
+                        if (row[e] != null && !row[e].Frozen && IsPositionShootable(gr, r, e) && row[e].Color == color && IsShootable(gr, r, e)) return true;
                 }
             return false;
         }
@@ -1009,5 +1010,14 @@ namespace Wayfu.Lamkn
         }
 
         public bool AllCleared => _everHadBlocks && RemainingBlocks == 0;
+
+        // Băng tan cho mọi cell có ngưỡng ≤ tổng block đã phá (destroyed). Gọi từ GameController.OnBoardChanged.
+        public void UpdateIce(int destroyed)
+        {
+            foreach (var gr in _grids)
+                foreach (var row in gr.Rows)
+                    foreach (var cell in row)
+                        if (cell != null && cell.Frozen && cell.IceThreshold <= destroyed) cell.Melt();
+        }
     }
 }

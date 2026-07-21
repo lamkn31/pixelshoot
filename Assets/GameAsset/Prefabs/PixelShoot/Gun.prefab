@@ -67,6 +67,7 @@ MonoBehaviour:
   muzzleLeft: {fileID: 3861695898367228732}
   targetLostGrace: 0.4
   bulletLabel: {fileID: 985889518328377816}
+  hiddenMaterial: {fileID: 2100000, guid: 68435d06caba6c246b1ff5de78a826f6, type: 2}
 --- !u!1 &4065937337305141625
 GameObject:
   m_ObjectHideFlags: 0

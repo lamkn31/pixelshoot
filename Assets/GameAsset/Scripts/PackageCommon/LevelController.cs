@@ -147,6 +147,8 @@ namespace Wayfu.Lamkn
 
         private Transform _propsRoot;
         private Transform _obstaclesRoot;
+        // Obstacle BĂNG: (object đã spawn, ngưỡng tan). Xoá dần khi tổng block phá đạt ngưỡng.
+        private readonly List<(GameObject go, int meltAt)> _iceObstacles = new List<(GameObject, int)>();
 
         private void ClearAll()
         {
@@ -156,6 +158,7 @@ namespace Wayfu.Lamkn
             SlotManager.Instance?.Clear();
             if (_propsRoot != null) Destroy(_propsRoot.gameObject);
             if (_obstaclesRoot != null) Destroy(_obstaclesRoot.gameObject);
+            _iceObstacles.Clear();
         }
 
         private void SpawnBoardProps(LevelData level)
@@ -184,6 +187,18 @@ namespace Wayfu.Lamkn
                 var go = Instantiate(o.Prefab, o.Pos, Quaternion.Euler(0f, o.RotationY, 0f), _obstaclesRoot);
                 Vector3 s = o.Scale == Vector3.zero ? Vector3.one : o.Scale;
                 go.transform.localScale = Vector3.Scale(go.transform.localScale, s);
+                if (o.MeltAtDestroyed > 0) _iceObstacles.Add((go, o.MeltAtDestroyed)); // obstacle băng → tự tan
+            }
+        }
+
+        // Xoá obstacle BĂNG đã đạt ngưỡng tan (tổng block phá ≥ MeltAtDestroyed). Gọi từ GameController.
+        public void UpdateObstacleMelt(int destroyed)
+        {
+            for (int i = _iceObstacles.Count - 1; i >= 0; i--)
+            {
+                var (go, meltAt) = _iceObstacles[i];
+                if (go == null) { _iceObstacles.RemoveAt(i); continue; }
+                if (destroyed >= meltAt) { Destroy(go); _iceObstacles.RemoveAt(i); }
             }
         }
 

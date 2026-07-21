@@ -42,6 +42,14 @@ namespace Wayfu.Lamkn
                 g.SetSlot(this);
                 _guns.Add(g);
             }
+            RefreshReveal();
+        }
+
+        // Gun ở index 0 = ở VỊ TRÍ ĐẦU → gun ẩn lộ màu; các gun sau vẫn ẩn. Gọi mỗi khi list gun đổi.
+        private void RefreshReveal()
+        {
+            for (int i = 0; i < _guns.Count; i++)
+                if (_guns[i] != null) _guns[i].SetAtFront(i == 0);
         }
 
         public Gun RemoveFront()
@@ -51,6 +59,7 @@ namespace Wayfu.Lamkn
             _guns.RemoveAt(0);
             for (int i = 0; i < _guns.Count; i++)
                 _guns[i].MoveTo(SlotPos(i), shiftDuration); // dồn gun sau lên
+            RefreshReveal(); // gun mới lên đầu (index 0) → lộ màu nếu là gun ẩn
             return front;
         }
 

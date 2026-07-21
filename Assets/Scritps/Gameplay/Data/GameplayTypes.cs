@@ -586,6 +586,9 @@ namespace Wayfu.Lamkn
     {
         public TypeColor Color;
         [Min(1)] public int CountBullet = 5;
+        [Tooltip("Gun ẨN: che màu (dùng material 'hidden') cho tới khi nó ra VỊ TRÍ ĐẦU (index 0) của slot " +
+                 "mới lộ màu thật.")]
+        public bool Hidden;
     }
 
     /// <summary>Data 1 block đơn trong cell: index + vị trí local (yêu cầu #8).</summary>
@@ -629,6 +632,13 @@ namespace Wayfu.Lamkn
         [Tooltip("Hướng dồn/spawn của cell trên sàn ngang XZ, tính bằng độ quanh trục Y (0° = +Z).")]
         public float SpawnerDirectionAngleZ;
 
+        [Tooltip("Cell bị BĂNG phủ: KHÔNG bắn được cho tới khi băng tan (phá đủ block). Băng phủ là 1 Obstacle " +
+                 "hình chữ nhật đặt đè lên vùng cell này (đặt cùng ngưỡng tan).")]
+        public bool Iced;
+        [Tooltip("Băng tan khi TỔNG số block đã phá trong màn ≥ ngưỡng này. Đặt cùng ngưỡng cho cả 1 vùng để " +
+                 "tan cùng lúc; khớp với Melt-At của Obstacle băng phủ lên.")]
+        [Min(0)] public int IceThreshold;
+
         /// <summary>Hướng dồn (vector NGANG trên sàn XZ): 0°=+Z, 90°=+X, 180°=−Z, 270°=−X.</summary>
         public Vector3 DirectionVector => Quaternion.Euler(0f, SpawnerDirectionAngleZ, 0f) * Vector3.forward;
     }
@@ -668,6 +678,9 @@ namespace Wayfu.Lamkn
         [Tooltip("Index cell mà obstacle gắn vào (-1 = độc lập).")]
         public int TargetCellIndex = -1;
         [Min(1)] public int Strength = 1;
+        [Tooltip("Obstacle BĂNG: tự biến mất khi TỔNG block đã phá trong màn ≥ giá trị này (0 = không tan, " +
+                 "obstacle thường). Đặt bằng IceThreshold của vùng cell nó phủ lên.")]
+        [Min(0)] public int MeltAtDestroyed;
     }
 
 }

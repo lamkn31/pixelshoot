@@ -36,6 +36,16 @@ namespace Wayfu.Lamkn
         /// <summary>Gán khi dựng cell (GridBlockManager biết ShootableEdges của grid).</summary>
         public void SetMultiSide(bool on) => MultiSideGrid = on;
 
+        /// <summary>Cell bị BĂNG phủ: KHÔNG bắn được cho tới khi băng tan (đủ block phá). Băng hiển thị bằng
+        /// 1 Obstacle riêng đè lên; ở đây chỉ giữ trạng thái để gun bỏ qua khi ngắm.</summary>
+        public bool Frozen { get; private set; }
+
+        /// <summary>Tổng block phá trong màn cần đạt để băng cell này TAN (0 = không băng).</summary>
+        public int IceThreshold { get; private set; }
+
+        /// <summary>Băng tan: cell trở lại bắn được. Gọi khi tổng block phá ≥ IceThreshold.</summary>
+        public void Melt() => Frozen = false;
+
         /// <summary>Cập nhật index cột khi cell dồn lên ô khác (Arc cột lệch: index có thể đổi).</summary>
         public void SetColumn(int col) => BlockCol = col;
 
@@ -95,6 +105,8 @@ namespace Wayfu.Lamkn
             // Nguồn tĩnh (Spawner8/SpawnerLine) = bất tử, đứng yên: chỉ là ô hiển thị "màu kế tiếp sẽ nhả
             // ra". Không bao giờ bị gun bắn trực tiếp; khi nhả hết sequence thì GridBlockManager tự despawn nó.
             Indestructible = data.Type.IsStaticSource();
+            Frozen = data.Iced && data.IceThreshold > 0; // băng ngưỡng 0 = tan ngay, coi như không băng
+            IceThreshold = data.IceThreshold;
             _pendingHits = 0;
             Generation++;                    // object pool tái dùng → đây là 1 cell MỚI
             PendingEntry = false;            // reset cho item pooled; MoveTo tự bật khi cell trượt
