@@ -69,7 +69,11 @@ namespace Wayfu.Lamkn
         // Generate grid.
         private TypeColor _genColor = TypeColor.Red;
         private int _genStack = 3;
-        private BlockGridShape _genShape = BlockGridShape.Spline; // loại grid khi bấm "+ Grid"
+        // Màu gun mặc định khi sinh gun vào slot (chọn số slot / "+ Gun mọi slot").
+        private TypeColor _slotGenColor = TypeColor.Red;
+        private BlockGridShape _genShape = BlockGridShape.Spline; // loại grid khi bấm "+ Grid" (Arc đã bỏ khỏi tool)
+        // Các shape tool cho phép chọn (Arc bị loại) — index 0 = Rect, 1 = Spline.
+        private static readonly string[] ToolShapeNames = { "Rect", "Spline" };
 
         // Màu tô cell bằng click trong khung giữa. None → click để CHỌN xem/sửa thông số.
         private TypeColor _paintColor = TypeColor.None;
@@ -120,6 +124,8 @@ namespace Wayfu.Lamkn
         private bool _marqueeOn;
         private readonly List<(Rect rect, int grid, int flat)> _hitCells = new List<(Rect, int, int)>();
         private readonly List<(Rect rect, int slot, int gun)> _hitGuns = new List<(Rect, int, int)>();
+        // Ô "+" ghost sau đuôi mỗi slot: click (khi đang chọn Paint Color) để thêm gun màu đó — giống queue cell.
+        private readonly List<(Rect rect, int slot)> _hitGunAdd = new List<(Rect, int)>();
         // Ghost hàng đợi của cell Spawner. qi = index trong Queue; qi == Queue.Count là ô "+" (thêm mới).
         private readonly List<(Rect rect, int grid, int flat, int qi)> _hitQueue = new List<(Rect, int, int, int)>();
 
@@ -325,6 +331,7 @@ namespace Wayfu.Lamkn
             if (GUILayout.Button("Reload")) RefreshLevels();
             EditorGUILayout.EndHorizontal();
             if (GUILayout.Button("Create Scene Slots (0-4)")) CreateSceneSlots();
+            if (GUILayout.Button("Create MapController")) CreateMapController();
 
             EditorGUILayout.Space(4);
             EditorGUILayout.LabelField($"Levels ({_levels.Count})", EditorStyles.boldLabel);
@@ -858,16 +865,17 @@ namespace Wayfu.Lamkn
             // Slots.
             if (_showSlots && _target.Slots != null)
             {
-                var sceneSlots = GetSceneSlots();
+                var slotPos = GetSlotBasePositions();
                 if (Event.current.type == EventType.MouseDown || Event.current.type == EventType.MouseUp) _hitGuns.Clear();
+                _hitGunAdd.Clear();
                 float spacing = GameSettings.Instance != null ? GameSettings.Instance.SlotGunSpacing : 1f;
                 var lbl = new GUIStyle(EditorStyles.miniBoldLabel) { alignment = TextAnchor.MiddleCenter };
                 lbl.normal.textColor = Color.white;
-                for (int si = 0; si < sceneSlots.Count && si < _target.Slots.Count; si++)
+                for (int si = 0; si < slotPos.Count && si < _target.Slots.Count; si++)
                 {
-                    var slot = sceneSlots[si]; var guns = _target.Slots[si]?.Guns;
-                    if (slot == null || guns == null) continue;
-                    Vector3 basePos = slot.transform.position;
+                    var guns = _target.Slots[si]?.Guns;
+                    if (guns == null) continue;
+                    Vector3 basePos = slotPos[si];
                     for (int i = 0; i < guns.Count; i++)
                     {
                         var g = guns[i]; if (g == null) continue;
@@ -882,7 +890,25 @@ namespace Wayfu.Lamkn
                         if (Event.current.type == EventType.MouseDown || Event.current.type == EventType.MouseUp)
                             _hitGuns.Add((gunRect, si, i));
                     }
+
+                    // Ô "+" ghost sau ĐUÔI slot (khi đang chọn Paint Color): click để thêm gun màu đó vào slot,
+                    // đúng kiểu thêm cell vào queue của spawner.
+                    if (_paintColor != TypeColor.None)
+                    {
+                        Vector3 addWp = basePos - Vector3.forward * spacing * guns.Count;
+                        if (Front(addWp))
+                        {
+                            Vector2 ap = Proj(addWp); float asz = PixSize(addWp, 0.6f);
+                            var addRect = new Rect(ap.x - asz / 2, ap.y - asz / 2, asz, asz);
+                            var col = GlobalConfigManager.ColorOf(_paintColor); col.a = 0.35f;
+                            FillRect(addRect, col);
+                            DrawOutline(addRect, new Color(1f, 0.6f, 0.1f, 0.8f), area);
+                            if (area.Contains(ap)) GUI.Label(addRect, "+", lbl);
+                            _hitGunAdd.Add((addRect, si));
+                        }
+                    }
                 }
+                HandleGunPaint(area); // thêm/đổi màu/xoá gun bằng chuột — trước marquee để nuốt click
             }
 
             // Obstacle: vẽ footprint + handle TRƯỚC marquee để handle nuốt click trước khi quét chọn.
@@ -970,6 +996,46 @@ namespace Wayfu.Lamkn
         /// trên grid → đặt stack = 0, tức thành LỖ: runtime không dựng cell VÀ không cho cell nào dồn vào
         /// (xem GridBlockManager.CanEnter) — grid giữ nguyên hình dạng, chỉ thủng đúng ô đó.
         /// </summary>
+        // Thêm/đổi màu/xoá gun bằng chuột (giống HandleQueuePaint của cell). TRÁI + có Paint Color: click ô
+        // "+" = thêm gun màu đó vào slot; click gun cũ = đổi màu nó. PHẢI (hoặc TRÁI khi Erase) trên 1 gun = xoá.
+        private void HandleGunPaint(Rect area)
+        {
+            var e = Event.current;
+            if (e.type != EventType.MouseDown || e.alt || !area.Contains(e.mousePosition)) return;
+            bool paint = e.button == 0 && _paintColor != TypeColor.None && !_eraseMode && !_shootMode;
+            bool del = e.button == 1 || (e.button == 0 && _eraseMode);
+            if (!paint && !del) return;
+
+            var slots = _so.FindProperty("Slots");
+
+            if (paint)
+                foreach (var h in _hitGunAdd)
+                    if (h.rect.Contains(e.mousePosition))
+                    {
+                        if (h.slot < 0 || h.slot >= slots.arraySize) return;
+                        var guns = slots.GetArrayElementAtIndex(h.slot).FindPropertyRelative("Guns");
+                        var g = guns.GetArrayElementAtIndex(AddArray(guns));
+                        g.FindPropertyRelative("Color").enumValueIndex = (int)_paintColor;
+                        g.FindPropertyRelative("CountBullet").intValue = 5;
+                        e.Use(); Repaint(); return;
+                    }
+
+            foreach (var h in _hitGuns)
+                if (h.rect.Contains(e.mousePosition))
+                {
+                    if (h.slot < 0 || h.slot >= slots.arraySize) return;
+                    var guns = slots.GetArrayElementAtIndex(h.slot).FindPropertyRelative("Guns");
+                    if (h.gun < 0 || h.gun >= guns.arraySize) return;
+                    if (del)
+                    {
+                        guns.DeleteArrayElementAtIndex(h.gun);
+                        if (_selSlot == h.slot && _selGun == h.gun) { _selGun = -1; _selSlot = -1; }
+                    }
+                    else guns.GetArrayElementAtIndex(h.gun).FindPropertyRelative("Color").enumValueIndex = (int)_paintColor;
+                    e.Use(); Repaint(); return;
+                }
+        }
+
         private void HandleDeleteKey(Rect area)
         {
             var e = Event.current;
@@ -983,6 +1049,20 @@ namespace Wayfu.Lamkn
                 var q = QueueProp(grids, _selQueue.grid, _selQueue.cell);
                 if (q != null && _selQueue.qi < q.arraySize) q.DeleteArrayElementAtIndex(_selQueue.qi);
                 ClearQueueSel();
+                e.Use(); Repaint();
+                return;
+            }
+
+            // Đang chọn 1 GUN → Delete xoá gun đó khỏi slot.
+            if (_selGun >= 0 && _selSlot >= 0)
+            {
+                var s = _so.FindProperty("Slots");
+                if (_selSlot < s.arraySize)
+                {
+                    var guns = s.GetArrayElementAtIndex(_selSlot).FindPropertyRelative("Guns");
+                    if (_selGun < guns.arraySize) guns.DeleteArrayElementAtIndex(_selGun);
+                }
+                _selGun = -1; _selSlot = -1;
                 e.Use(); Repaint();
                 return;
             }
@@ -1536,9 +1616,11 @@ namespace Wayfu.Lamkn
                 hit = true;
             }
             // Đang ERASE mà click (không rê) vào khoảng TRỐNG — không trúng cell nào (grid/handle đã e.Use()
-            // trước nên start=false, không lọt xuống đây) → thoát Erase, về None cho tiện.
-            if (start && _eraseMode && !hit) _eraseMode = false;
-            if (hit || start) { e.Use(); Repaint(); }
+            // trước nên start=false, không lọt xuống đây) → thoát Erase, về None cho tiện (và nuốt click).
+            if (start && _eraseMode && !hit) { _eraseMode = false; e.Use(); Repaint(); return; }
+            // CHỈ nuốt click khi thực sự trúng cell — để click Paint TRƯỢT cell (vd ô "+" của slot) rơi xuống
+            // HandleGunPaint. Marquee vẫn không chạy vì nó tự return khi Paint != None.
+            if (hit) { e.Use(); Repaint(); }
         }
 
         /// <summary>
@@ -1744,13 +1826,13 @@ namespace Wayfu.Lamkn
         private void CollectSlotPoints(List<Vector3> pts)
         {
             if (_target.Slots == null) return;
-            var sceneSlots = GetSceneSlots();
+            var slotPos = GetSlotBasePositions();
             float spacing = GameSettings.Instance != null ? GameSettings.Instance.SlotGunSpacing : 1f;
-            for (int si = 0; si < sceneSlots.Count && si < _target.Slots.Count; si++)
+            for (int si = 0; si < slotPos.Count && si < _target.Slots.Count; si++)
             {
                 var guns = _target.Slots[si]?.Guns;
-                if (sceneSlots[si] == null || guns == null) continue;
-                Vector3 basePos = sceneSlots[si].transform.position;
+                if (guns == null) continue;
+                Vector3 basePos = slotPos[si];
                 for (int i = 0; i < guns.Count; i++) pts.Add(basePos + Vector3.forward * spacing * i);
             }
         }
@@ -1964,6 +2046,12 @@ namespace Wayfu.Lamkn
             var g = guns.GetArrayElementAtIndex(_selGun);
             EditorGUILayout.PropertyField(g.FindPropertyRelative("Color"), new GUIContent("Màu"));
             EditorGUILayout.PropertyField(g.FindPropertyRelative("CountBullet"), new GUIContent("Số lượng đạn"));
+            EditorGUILayout.HelpBox("Ấn DELETE (chuột ở khung giữa) hoặc CLICK PHẢI vào gun để xoá.", MessageType.None);
+            if (GUILayout.Button("Xoá gun này"))
+            {
+                guns.DeleteArrayElementAtIndex(_selGun);
+                _selGun = -1; _selSlot = -1;
+            }
             EditorGUILayout.EndVertical();
         }
 
@@ -2250,7 +2338,58 @@ namespace Wayfu.Lamkn
             if (GUILayout.Button("+ Slot", GUILayout.Width(58))) slots.GetArrayElementAtIndex(AddArray(slots)).FindPropertyRelative("Guns").arraySize = 0;
             EditorGUILayout.EndHorizontal();
             if (!_foldSlots) return;
-            EditorGUILayout.HelpBox("Vị trí slot lấy từ GunSlot trên scene (Slot0..4). Slot[i] có gun = slot i active.", MessageType.None);
+
+            // LOẠI MAP theo số slot (2..5). Đổi loại → tự co/giãn Slots đúng số đó (thêm slot rỗng / cắt bớt).
+            var scProp = _so.FindProperty("SlotCount");
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(new GUIContent("Loại map (số slot)",
+                "MapController sẽ spawn map prefab tương ứng số slot này; vị trí slot do prefab quyết định."),
+                GUILayout.Width(130));
+            for (int n = MapController.MinSlots; n <= MapController.MaxSlots; n++)
+            {
+                bool sel = scProp.intValue == n;
+                if (GUILayout.Toggle(sel, n.ToString(), EditorStyles.miniButton, GUILayout.Width(30)) && !sel)
+                {
+                    scProp.intValue = n;
+                    int old = slots.arraySize;
+                    slots.arraySize = n;                                   // co/giãn về đúng n slot
+                    for (int k = 0; k < n; k++)
+                    {
+                        var guns = slots.GetArrayElementAtIndex(k).FindPropertyRelative("Guns");
+                        // Slot MỚI (hoặc slot cũ đang rỗng) → mặc định 1 gun ĐẦU màu ĐỎ (5 đạn). Slot cũ đã có
+                        // gun thì giữ nguyên. (Slot mới do resize copy phần tử cuối nên phải set lại rõ ràng.)
+                        if (k >= old || guns.arraySize == 0)
+                        {
+                            guns.arraySize = 1;
+                            var g0 = guns.GetArrayElementAtIndex(0);
+                            g0.FindPropertyRelative("Color").enumValueIndex = (int)_slotGenColor;
+                            g0.FindPropertyRelative("CountBullet").intValue = 5;
+                        }
+                    }
+                }
+            }
+            EditorGUILayout.EndHorizontal();
+
+            // Màu gun để SINH vào slot: dùng cho gun mặc định khi chọn số slot, và nút "+ Gun mọi slot".
+            EditorGUILayout.BeginHorizontal();
+            _slotGenColor = (TypeColor)EditorGUILayout.EnumPopup("Màu gun sinh", _slotGenColor);
+            if (GUILayout.Button(new GUIContent("+ Gun mọi slot", "Thêm 1 gun màu này (5 đạn) vào cuối MỌI slot."),
+                                 GUILayout.Width(120)))
+                for (int k = 0; k < slots.arraySize; k++)
+                {
+                    var guns = slots.GetArrayElementAtIndex(k).FindPropertyRelative("Guns");
+                    var g = guns.GetArrayElementAtIndex(AddArray(guns));
+                    g.FindPropertyRelative("Color").enumValueIndex = (int)_slotGenColor;
+                    g.FindPropertyRelative("CountBullet").intValue = 5;
+                }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.HelpBox("Vị trí slot lấy từ script Map trên map prefab (list mốc — mỗi mốc = nơi sinh "
+                + "GUN 0 của 1 slot, theo loại số slot ở trên). Gán 4 map prefab trên MapController trong scene, "
+                + "mỗi prefab có component Map. Chưa có thì fallback GunSlot đặt sẵn scene. Khoảng cách gun theo GameSettings.\n"
+                + "Khung giữa: chọn Paint Color rồi CLICK ô \"+\" sau đuôi slot để THÊM gun màu đó (như thêm cell vào "
+                + "queue) · click gun cũ để ĐỔI MÀU · CLICK PHẢI vào gun để XOÁ · click gun (Paint=None) để chọn/sửa · DELETE để xoá.",
+                MessageType.None);
 
             int pend = -1; ListOp op = ListOp.None;
             for (int i = 0; i < slots.arraySize; i++)
@@ -2292,11 +2431,14 @@ namespace Wayfu.Lamkn
             var grids = _so.FindProperty("Grids");
             EditorGUILayout.BeginHorizontal();
             _foldGrids = EditorGUILayout.Foldout(_foldGrids, $"GRIDS — {grids.arraySize}", true, EditorStyles.foldoutHeader);
-            _genShape = (BlockGridShape)EditorGUILayout.EnumPopup(_genShape, GUILayout.Width(60));
+            // Arc đã bỏ khỏi tool — chỉ tạo mới Rect / Spline.
+            int gsi = EditorGUILayout.Popup(_genShape == BlockGridShape.Spline ? 1 : 0,
+                                            ToolShapeNames, GUILayout.Width(70));
+            _genShape = gsi == 1 ? BlockGridShape.Spline : BlockGridShape.Rect;
             if (GUILayout.Button("+ Grid", GUILayout.Width(58))) AddGrid(grids);
             EditorGUILayout.EndHorizontal();
             if (!_foldGrids) return;
-            EditorGUILayout.HelpBox("Chọn loại grid (Arc = vòng cung, Rect = lưới chữ nhật) rồi bấm + Grid.\nKhung giữa: kéo TÂM (hồng) · 2 ĐẦU CẠNH (xanh dương) · XOAY grid (xanh lá). Row 0 = hàng gần path.\nClick ô cell = tô màu đang chọn ở Paint Color · kéo đầu mũi tên = xoay hướng cell.", MessageType.None);
+            EditorGUILayout.HelpBox("Chọn loại grid (Rect = lưới chữ nhật, Spline = dải uốn lượn) rồi bấm + Grid.\nKhung giữa: kéo TÂM (hồng) · 2 ĐẦU CẠNH (xanh dương) · XOAY grid (xanh lá). Row 0 = hàng gần path.\nClick ô cell = tô màu đang chọn ở Paint Color · kéo đầu mũi tên = xoay hướng cell.", MessageType.None);
 
             EditorGUILayout.BeginHorizontal();
             _genColor = (TypeColor)EditorGUILayout.EnumPopup("Gen Color", _genColor);
@@ -2337,8 +2479,22 @@ namespace Wayfu.Lamkn
                 var shapeProp = grid.FindPropertyRelative("Shape");
                 bool isRect = shapeProp.enumValueIndex == (int)BlockGridShape.Rect;
                 bool isSpline = shapeProp.enumValueIndex == (int)BlockGridShape.Spline;
+                bool isArc = shapeProp.enumValueIndex == (int)BlockGridShape.Arc;
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.PropertyField(shapeProp, new GUIContent("Shape"));
+                // Arc đã bỏ: grid mới chỉ Rect/Spline. Grid CŨ kiểu Arc hiện "Arc (đã bỏ)" + cho chuyển sang
+                // Rect/Spline, KHÔNG tự convert nếu user không chọn (BeginChangeCheck).
+                if (isArc)
+                {
+                    EditorGUI.BeginChangeCheck();
+                    int ci = EditorGUILayout.Popup("Shape", 0, new[] { "Arc (đã bỏ)", "Rect", "Spline" });
+                    if (EditorGUI.EndChangeCheck() && ci > 0)
+                        shapeProp.enumValueIndex = (int)(ci == 2 ? BlockGridShape.Spline : BlockGridShape.Rect);
+                }
+                else
+                {
+                    int nsi = EditorGUILayout.Popup("Shape", isSpline ? 1 : 0, ToolShapeNames);
+                    shapeProp.enumValueIndex = (int)(nsi == 1 ? BlockGridShape.Spline : BlockGridShape.Rect);
+                }
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("Side"), new GUIContent("Side",
                     "Left/Right = chỉ nòng cùng bên của gun bắn được grid này. Any = theo quạt gun."));
                 EditorGUILayout.EndHorizontal();
@@ -2434,6 +2590,7 @@ namespace Wayfu.Lamkn
             int idx = grids.arraySize; grids.arraySize++;
             var g = grids.GetArrayElementAtIndex(idx);
             bool spline = _genShape == BlockGridShape.Spline;
+            bool rect = _genShape == BlockGridShape.Rect;
 
             g.FindPropertyRelative("Shape").enumValueIndex = (int)_genShape;
             g.FindPropertyRelative("Center").vector3Value = Vector3.zero;
@@ -2446,11 +2603,12 @@ namespace Wayfu.Lamkn
             g.FindPropertyRelative("Layout").enumValueIndex = (int)BlockGridLayout.ArcLength;
             g.FindPropertyRelative("Cells").arraySize = 0;
 
-            // Default riêng cho Spline (dải uốn lượn) khác Arc/Rect.
-            g.FindPropertyRelative("BaseRadius").floatValue = spline ? 0f : 3f;      // Lệch Row 0
-            g.FindPropertyRelative("RowSpacing").floatValue = spline ? 1f : 1.2f;
-            g.FindPropertyRelative("BlockWidth").floatValue = spline ? 0f : 0.8f;
-            g.FindPropertyRelative("Spacing").floatValue = spline ? 0.8f : 0.2f;
+            // Default riêng theo shape: Rect (lưới sát nhau) = BlockW 0 · Dist Row 0 = 0 · RowSpacing 1 ·
+            // Spacing 0; Spline (dải uốn lượn); còn lại Arc.
+            g.FindPropertyRelative("BaseRadius").floatValue = spline || rect ? 0f : 3f;   // Dist/Lệch Row 0
+            g.FindPropertyRelative("RowSpacing").floatValue = rect ? 1f : spline ? 1f : 1.2f;
+            g.FindPropertyRelative("BlockWidth").floatValue = spline || rect ? 0f : 0.8f;
+            g.FindPropertyRelative("Spacing").floatValue = rect ? 0f : spline ? 0.8f : 0.2f;
 
             var scr = g.FindPropertyRelative("SplineCornerRadius");
             if (scr != null) scr.floatValue = 5f;
@@ -2700,6 +2858,20 @@ namespace Wayfu.Lamkn
             EditorGUIUtility.PingObject(asset);
         }
 
+        // Tạo 1 MapController rỗng trên scene để gán 4 map prefab (2/3/4/5 slot). Không tạo trùng.
+        private void CreateMapController()
+        {
+            var mc = FindObjectOfType<MapController>();
+            if (mc == null)
+            {
+                var go = new GameObject("MapController");
+                Undo.RegisterCreatedObjectUndo(go, "Create MapController");
+                mc = go.AddComponent<MapController>();
+            }
+            Selection.activeGameObject = mc.gameObject;
+            EditorGUIUtility.PingObject(mc.gameObject);
+        }
+
         private void CreateSceneSlots()
         {
             var mgr = FindObjectOfType<SlotManager>();
@@ -2777,6 +2949,28 @@ namespace Wayfu.Lamkn
             var list = new List<GunSlot>(Object.FindObjectsOfType<GunSlot>(true));
             list.Sort((a, b) => a.SlotIndex.CompareTo(b.SlotIndex));
             return list;
+        }
+
+        // Vị trí GỐC (nơi sinh gun 0) từng slot để PREVIEW: ưu tiên các mốc trong script Map của map prefab
+        // theo SlotCount (đúng chỗ map sẽ sinh lúc Play, cộng transform MapController trên scene nếu có).
+        // Fallback: GunSlot đặt sẵn scene.
+        private List<Vector3> GetSlotBasePositions()
+        {
+            var result = new List<Vector3>();
+            var mc = Object.FindObjectOfType<MapController>();
+            if (mc != null && _target != null)
+            {
+                var prefab = mc.PrefabFor(_target.SlotCount);
+                var map = prefab != null ? prefab.GetComponent<Map>() : null;
+                if (map != null && map.SlotSpawns != null)
+                {
+                    foreach (var t in map.SlotSpawns)
+                        if (t != null) result.Add(mc.transform.TransformPoint(t.position));
+                    if (result.Count > 0) return result;
+                }
+            }
+            foreach (var s in GetSceneSlots()) result.Add(s.transform.position);
+            return result;
         }
 
         // Điểm trên path theo arc-length — chạy trên ĐƯỜNG BO GÓC (_pathSamples) đúng như runtime, không

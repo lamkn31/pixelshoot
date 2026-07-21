@@ -24,6 +24,23 @@ namespace Wayfu.Lamkn
             float spacing = gs != null ? gs.SlotGunSpacing : 1f;   // config chung
             var fire = GunFireConfig.FromSettings(gs);
 
+            // ƯU TIÊN: script Map trên map prefab (MapController spawn) — mỗi mốc = nơi sinh GUN 0 của 1 slot.
+            var map = MapController.IsActive ? MapController.Instance.CurrentMapScript : null;
+            if (map != null && map.SlotCount > 0)
+            {
+                for (int i = 0; i < level.Slots.Count; i++)
+                {
+                    var sd = level.Slots[i];
+                    if (sd?.Guns == null || sd.Guns.Count == 0) continue;
+                    if (!map.TryGetSlotPosition(i, out var pos)) continue; // map không có mốc cho slot i
+                    var slot = CreateRuntimeSlot(i, pos);
+                    slot.Fill(sd.Guns, spacing, fire);
+                    _activeSlots.Add(slot);
+                }
+                return;
+            }
+
+            // Không có Map → slot ĐẶT SẴN trên scene (bật/tắt theo số slot có gun).
             var slots = ResolveSceneSlots();
             if (slots.Count > 0)
             {
@@ -42,22 +59,29 @@ namespace Wayfu.Lamkn
             }
             else
             {
-                // Fallback: chưa đặt slot trên scene → tạo 1 hàng slot mặc định.
+                // Fallback cuối: chưa có Map lẫn slot scene → tạo 1 hàng slot mặc định.
                 float gap = Mathf.Max(1.5f, spacing * 3f);
                 for (int i = 0; i < level.Slots.Count; i++)
                 {
                     var sd = level.Slots[i];
                     if (sd?.Guns == null || sd.Guns.Count == 0) continue;
-                    var go = new GameObject("Slot" + i);
-                    go.transform.SetParent(transform);
-                    var slot = go.AddComponent<GunSlot>();
-                    slot.SlotIndex = i;
-                    slot.SetPosition(new Vector3(i * gap, 0f, 0f));
+                    var slot = CreateRuntimeSlot(i, new Vector3(i * gap, 0f, 0f));
                     slot.Fill(sd.Guns, spacing, fire);
                     _activeSlots.Add(slot);
-                    _fallbackCreated.Add(go);
                 }
             }
+        }
+
+        // Tạo 1 GunSlot runtime tại vị trí cho trước (dùng cho map Map-script và fallback); tự theo dõi để Clear.
+        private GunSlot CreateRuntimeSlot(int index, Vector3 pos)
+        {
+            var go = new GameObject("Slot" + index);
+            go.transform.SetParent(transform);
+            var slot = go.AddComponent<GunSlot>();
+            slot.SlotIndex = index;
+            slot.SetPosition(pos);
+            _fallbackCreated.Add(go);
+            return slot;
         }
 
         public void Clear()

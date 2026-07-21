@@ -136,6 +136,7 @@ namespace Wayfu.Lamkn
 
             PathManager.Instance.Build(_level); // tự dựng RoundedPolylinePath + mặt đường
             GridBlockManager.Instance.Build(_level);
+            MapController.Instance?.Build(_level); // spawn map theo SlotCount → tạo các GunSlot cho SlotManager
             SlotManager.Instance.Build(_level);
             SpawnBoardProps(_level);
             SpawnObstacles(_level);
@@ -151,6 +152,7 @@ namespace Wayfu.Lamkn
         {
             PathManager.Instance?.Clear();
             GridBlockManager.Instance?.Clear();
+            if (MapController.IsActive) MapController.Instance.Clear();
             SlotManager.Instance?.Clear();
             if (_propsRoot != null) Destroy(_propsRoot.gameObject);
             if (_obstaclesRoot != null) Destroy(_obstaclesRoot.gameObject);
@@ -190,6 +192,7 @@ namespace Wayfu.Lamkn
             Ensure<PoolManager>();
             Ensure<GameController>();
             Ensure<GridBlockManager>();
+            Ensure<MapController>();
             Ensure<SlotManager>();
             Ensure<PathManager>();
         }

@@ -29,6 +29,9 @@ namespace Wayfu.Lamkn
         // Path Width đã chuyển sang GameSettings (dùng CHUNG mọi level) — xem GameSettings.PathWidth.
 
         [Header("Slots (số hàng gun + thứ tự gun ra)")]
+        [Tooltip("LOẠI MAP theo số slot (2..5). MapController spawn map prefab tương ứng; vị trí các slot do " +
+                 "chính prefab quyết định. Số phần tử Slots nên = SlotCount (Level Tool tự co/giãn khi đổi).")]
+        [Range(2, 5)] public int SlotCount = 2;
         public List<SlotData> Slots = new List<SlotData>();
 
         [Header("Hole capacity (số block xếp chồng mỗi cell)")]
