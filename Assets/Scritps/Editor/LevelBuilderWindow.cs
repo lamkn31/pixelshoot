@@ -76,6 +76,10 @@ namespace Wayfu.Lamkn
         private bool _liveSync = true;
         private bool _liveDirty;
 
+        // Grid đang ACTIVE để sửa: -1 = mọi grid; >=0 = CHỈ grid này nhận click/tô/xóa/quét (các grid chồng
+        // nhau khác bị khóa, chỉ hiện mờ). Tránh sửa nhầm cell của grid đè lên nhau.
+        private int _activeGrid = -1;
+
         // Đối tượng đang chọn trong khung giữa (chỉ khi Paint = None).
         private readonly List<(int grid, int cell)> _selCells = new List<(int, int)>();
         private int _selSlot = -1, _selGun = -1;    // gun (chọn 1)
@@ -458,8 +462,15 @@ namespace Wayfu.Lamkn
             EditorGUI.DrawRect(rect, new Color(0.12f, 0.12f, 0.14f));
             if (_target != null) DrawSchematicView(rect);
             else GUI.Label(rect, "Chọn 1 level ở panel trái", EditorStyles.centeredGreyMiniLabel);
-            GUI.Label(new Rect(rect.x + 6, rect.yMax - 18, 300, 16),
+            GUI.Label(new Rect(rect.x + 6, rect.yMax - 18, 320, 16),
                 $"zoom {(_zoom * 100f):0}%  (scroll: zoom, chuột giữa/Alt+kéo: pan)", EditorStyles.miniLabel);
+            if (_activeGrid >= 0)
+            {
+                var lbl = new GUIStyle(EditorStyles.miniBoldLabel);
+                lbl.normal.textColor = new Color(0.4f, 1f, 0.5f);
+                GUI.Label(new Rect(rect.x + 6, rect.y + 4, 360, 16),
+                    $"Đang sửa CHỈ Grid {_activeGrid} (grid khác bị khóa/mờ — bỏ nút ✎ để sửa tất cả)", lbl);
+            }
             EditorGUILayout.EndVertical();
         }
 
@@ -620,11 +631,16 @@ namespace Wayfu.Lamkn
                 _hitCells.Clear();
                 _hitQueue.Clear();
 
+                // Grid active trỏ ra ngoài danh sách (vừa xoá grid) → về -1, không thì khóa sạch mọi grid.
+                if (_activeGrid >= _target.Grids.Count) _activeGrid = -1;
+
                 for (int gi = 0; gi < _target.Grids.Count; gi++)
                 {
                     var grid = _target.Grids[gi];
                     if (grid == null) continue;
                     int last = Mathf.Max(0, grid.Rows - 1);
+                    // Grid active (hoặc chưa chọn grid nào) mới cho SỬA; grid khác chỉ hiện mờ, không nhận click.
+                    bool editable = _activeGrid < 0 || gi == _activeGrid;
 
                     // Viền: Rect = 4 cạnh; Arc = 2 cạnh bên. Spline bỏ qua — dải uốn lượn không có "cạnh"
                     // nối thẳng được, vẽ vào chỉ thành đường chém ngang qua grid; đã có đường tím thay thế.
@@ -661,7 +677,7 @@ namespace Wayfu.Lamkn
                             float sz = PixSize(wp, Mathf.Max(0.05f, grid.CellScale.x));
                             var cellRect = new Rect(bp.x - sz / 2, bp.y - sz / 2, sz, sz);
                             int flatIdx = grid.CellIndex(r, e);
-                            _hitCells.Add((cellRect, gi, flatIdx));
+                            if (editable) _hitCells.Add((cellRect, gi, flatIdx)); // grid khóa → không bắt click
                             if (empty)
                             {
                                 // Ghost ô trống: fill rất mờ + viền, click (tô màu) sẽ phục hồi stack.
@@ -671,7 +687,9 @@ namespace Wayfu.Lamkn
                                 continue;
                             }
                             bool isSpawner = cell.Type.IsSpawner();
-                            FillRect(cellRect, GlobalConfigManager.ColorOf(cell.Color));
+                            var cellCol = GlobalConfigManager.ColorOf(cell.Color);
+                            if (!editable) cellCol.a *= 0.35f; // grid bị khóa → làm mờ để thấy rõ đang khóa
+                            FillRect(cellRect, cellCol);
                             // Viền vàng = cell đang chọn; viền cam = cell Spawner (còn hàng đợi phía sau).
                             if (IsCellSelected(gi, flatIdx)) DrawOutline(cellRect, Color.yellow, area);
                             else if (isSpawner) DrawOutline(cellRect, SpawnerCol, area);
@@ -725,7 +743,7 @@ namespace Wayfu.Lamkn
                     // xen trong vòng trên thì bị cell hàng sau đè lên — mà click lại ưu tiên ghost, thành
                     // ra nhìn một đằng bấm một nẻo. Tắt Queue = không vẽ → _hitQueue rỗng → ghost cũng
                     // hết ăn click, không còn cướp chuột của cell thật nằm dưới.
-                    if (_showQueue)
+                    if (_showQueue && editable) // grid khóa → không vẽ/không bắt click ghost hàng đợi
                         for (int r = 0; r < grid.Rows; r++)
                         {
                             int count = grid.ElementsInRow(r);
@@ -1897,6 +1915,15 @@ namespace Wayfu.Lamkn
                 int pendBlocks = SumStackPending(gdata?.PendingRefill);
                 string blkTxt = pendBlocks > 0 ? $"{gridBlocks}(+{pendBlocks})" : gridBlocks.ToString();
                 bool openGrid = FoldAt(_foldGrid, i, $"Grid {i} — {rows} rows · {blkTxt} block");
+                // Nút chọn grid để SỬA: bật thì chỉ grid này nhận click/tô/xóa/quét trong khung giữa.
+                bool wasActive = _activeGrid == i;
+                var bg = GUI.backgroundColor;
+                GUI.backgroundColor = wasActive ? new Color(0.4f, 1f, 0.5f) : bg;
+                bool nowActive = GUILayout.Toggle(wasActive, new GUIContent("✎",
+                    "Chọn grid này để SỬA — chỉ grid đang chọn mới nhận click/tô/xóa/quét (grid chồng khác bị khóa). " +
+                    "Bấm lại để bỏ (cho sửa mọi grid)."), EditorStyles.miniButton, GUILayout.Width(24));
+                GUI.backgroundColor = bg;
+                if (nowActive != wasActive) _activeGrid = nowActive ? i : -1;
                 var o = MiniButtons(i, grids.arraySize);
                 if (o != ListOp.None) { pend = i; op = o; }
                 EditorGUILayout.EndHorizontal();
@@ -2198,7 +2225,7 @@ namespace Wayfu.Lamkn
 
         #region Level list ops
 
-        private void Select(LevelData lv) { _target = lv; _so = null; if (lv != null) EditorGUIUtility.PingObject(lv); Repaint(); }
+        private void Select(LevelData lv) { _target = lv; _so = null; _activeGrid = -1; if (lv != null) EditorGUIUtility.PingObject(lv); Repaint(); }
 
         private void RefreshLevels()
         {
