@@ -45,6 +45,8 @@ namespace Wayfu.Lamkn
 
         public bool IsFull => Reserved >= _maxGunOnPath;
         public bool CanAccept => Reserved < _maxGunOnPath;
+        /// <summary>Còn đủ chỗ nhận thêm <paramref name="n"/> gun cùng lúc không (cho nhóm connect).</summary>
+        public bool CanAcceptCount(int n) => Reserved + n <= _maxGunOnPath;
         public int GunCount => _guns.Count;
         public int QueueCount => _queue.Count;
         public RoundedPolylinePath Path => _path;
@@ -259,7 +261,8 @@ namespace Wayfu.Lamkn
         {
             if (GridBlockManager.Instance == null) return false;
             foreach (var g in _guns)
-                if (GridBlockManager.Instance.HasFrontCellOfColor(g.Color)) return true;
+                // Gun connect hết đạn còn đứng chờ trên path → KHÔNG tính là còn bắn được (nó không nhả đạn nữa).
+                if (g != null && g.HasBullets && GridBlockManager.Instance.HasFrontCellOfColor(g.Color)) return true;
             return false;
         }
     }

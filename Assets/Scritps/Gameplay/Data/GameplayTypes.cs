@@ -589,6 +589,9 @@ namespace Wayfu.Lamkn
         [Tooltip("Gun ẨN: che màu (dùng material 'hidden') cho tới khi nó ra VỊ TRÍ ĐẦU (index 0) của slot " +
                  "mới lộ màu thật.")]
         public bool Hidden;
+        [Tooltip("Nhóm CONNECT (0 = không connect). Các gun CÙNG số này (ở slot khác nhau) nối với nhau: chỉ " +
+                 "deploy được khi TẤT CẢ đang ở index 0, và cả nhóm vào path CÙNG lúc.")]
+        public int ConnectGroup;
     }
 
     /// <summary>Data 1 block đơn trong cell: index + vị trí local (yêu cầu #8).</summary>

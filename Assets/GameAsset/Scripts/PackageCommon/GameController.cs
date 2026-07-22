@@ -55,6 +55,17 @@ namespace Wayfu.Lamkn
             CheckLose();
         }
 
+        /// <summary>
+        /// Nhóm connect KHÔNG deploy được (vượt sức chứa path) VÀ gun trên path không bắn được cell nào →
+        /// bế tắc → THUA. Gọi từ SlotManager khi người chơi bấm nhóm connect mà không đủ chỗ.
+        /// </summary>
+        public void NotifyConnectStuck()
+        {
+            if (State != GameState.Playing) return;
+            var pm = PathManager.Instance;
+            if (pm != null && pm.GunCount > 0 && !pm.AnyGunHasTarget()) Lose();
+        }
+
         /// <summary>Chơi lại ĐÚNG màn hiện tại, không đụng tiến trình đã lưu.</summary>
         public void Retry() => Level?.Retry();
 

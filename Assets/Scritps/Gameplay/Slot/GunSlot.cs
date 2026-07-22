@@ -19,6 +19,7 @@ namespace Wayfu.Lamkn
 
         public Gun FrontGun => _guns.Count > 0 ? _guns[0] : null;
         public int Count => _guns.Count;
+        public IReadOnlyList<Gun> Guns => _guns;
 
         /// <summary>Vị trí của gun theo index — index 0 ở PHÍA TRƯỚC (gần path, +Z), index sau lùi về −Z.</summary>
         private Vector3 SlotPos(int index) => transform.position - Vector3.forward * _spacing * index;

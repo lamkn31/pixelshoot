@@ -123,7 +123,7 @@ namespace Wayfu.Lamkn
 
         public void Init(GunData data, GunFireConfig fire)
         {
-            Data = new GunData { Color = data.Color, CountBullet = data.CountBullet, Hidden = data.Hidden };
+            Data = new GunData { Color = data.Color, CountBullet = data.CountBullet, Hidden = data.Hidden, ConnectGroup = data.ConnectGroup };
             _fire = fire;
             _atFront = false; // item pooled tái dùng: mặc định CHƯA ở đầu; slot gọi SetAtFront sau Fill
 
@@ -234,6 +234,7 @@ namespace Wayfu.Lamkn
         /// <summary>Chạy 1 bên nòng.</summary>
         private void TickBarrel(Barrel b, Barrel other)
         {
+            if (Data.CountBullet <= 0) return; // hết đạn (gun connect đứng chờ cả nhóm) → không ngắm/bắn nữa
             bool justAcquired = false; // vừa CHỐT target mới ở frame này → chưa bắn (chờ 1 frame cho ổn)
             // Chỉ được CHỌN target mới khi cell đang bám đã bị phá HẾT (dứt điểm từng cell) VÀ nòng còn
             // lượt của vòng này. Hết lượt (!Armed) thì KHÔNG nhặt cell mới — nhưng cell đang bắn DỞ vẫn
@@ -374,8 +375,25 @@ namespace Wayfu.Lamkn
             for (int i = 0; i < shots; i++) FireOne(b, Mathf.Max(0, top - i));
 
             UpdateLabel();
-            if (Data.CountBullet <= 0) Die();
+            if (Data.CountBullet <= 0) OnEmptied();
         }
+
+        public bool HasBullets => Data != null && Data.CountBullet > 0;
+
+        // Gun hết đạn: gun connect KHÔNG tự hủy — SlotManager chỉ hủy khi CẢ NHÓM hết đạn (giữ chỗ trên path
+        // tới lúc đó). Gun thường thì hủy ngay như cũ.
+        private void OnEmptied()
+        {
+            if (Data.ConnectGroup != 0 && SlotManager.IsActive)
+            {
+                SlotManager.Instance.OnConnectGunEmptied(this);
+                return;
+            }
+            Die();
+        }
+
+        /// <summary>Hủy gun ngay (SlotManager gọi khi cả nhóm connect đã hết đạn).</summary>
+        public void Kill() => Die();
 
         /// <summary>
         /// Đẩy hàng đạn tiến sẵn về phía target: hàng đáy (blockIndex 0) đứng nguyên, mỗi hàng lên cao
@@ -483,11 +501,11 @@ namespace Wayfu.Lamkn
             if (_state == GunState.Dead) return;
 
             //DrawBarrelArc(_right);
-            DrawBarrelArc(_left);
+            //DrawBarrelArc(_left);
 
             if (_state != GunState.OnPath) return;
-            DrawTargetLine(_right, "R");
-            DrawTargetLine(_left, "L");
+            //DrawTargetLine(_right, "R");
+            //DrawTargetLine(_left, "L");
         }
 
         private void DrawBarrelArc(Barrel b)

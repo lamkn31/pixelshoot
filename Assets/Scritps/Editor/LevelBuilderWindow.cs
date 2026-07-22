@@ -888,6 +888,8 @@ namespace Wayfu.Lamkn
                 float spacing = GameSettings.Instance != null ? GameSettings.Instance.SlotGunSpacing : 1f;
                 var lbl = new GUIStyle(EditorStyles.miniBoldLabel) { alignment = TextAnchor.MiddleCenter };
                 lbl.normal.textColor = Color.white;
+                // Gom vị trí gun theo nhóm CONNECT để vẽ đường nối (màu 2 đầu theo gun).
+                var connectPts = new Dictionary<int, List<(Vector3 wp, TypeColor color)>>();
                 for (int si = 0; si < slotPos.Count && si < _target.Slots.Count; si++)
                 {
                     var guns = _target.Slots[si]?.Guns;
@@ -908,6 +910,13 @@ namespace Wayfu.Lamkn
                         // Vùng click gun — chọn xử lý ở HandleMarquee (click ngắn = chọn 1 gun).
                         if (Event.current.type == EventType.MouseDown || Event.current.type == EventType.MouseUp)
                             _hitGuns.Add((gunRect, si, i));
+                        // Gun connect → gom để vẽ đường nối.
+                        if (g.ConnectGroup != 0)
+                        {
+                            if (!connectPts.TryGetValue(g.ConnectGroup, out var lst))
+                            { lst = new List<(Vector3, TypeColor)>(); connectPts[g.ConnectGroup] = lst; }
+                            lst.Add((wp, g.Color));
+                        }
                     }
 
                     // Ô "+" ghost sau ĐUÔI slot (khi đang chọn Paint Color): click để thêm gun màu đó vào slot,
@@ -925,6 +934,19 @@ namespace Wayfu.Lamkn
                             if (area.Contains(ap)) GUI.Label(addRect, "+", lbl);
                             _hitGunAdd.Add((addRect, si));
                         }
+                    }
+                }
+                // Đường nối các gun CONNECT (nhóm ≥2): mỗi đoạn tô nửa màu gun đầu, nửa màu gun cuối.
+                foreach (var kv in connectPts)
+                {
+                    var pts = kv.Value;
+                    if (pts.Count < 2) continue;
+                    for (int i = 0; i + 1 < pts.Count; i++)
+                    {
+                        if (!Front(pts[i].wp) || !Front(pts[i + 1].wp)) continue;
+                        Vector2 pa = Proj(pts[i].wp), pb = Proj(pts[i + 1].wp), pm = (pa + pb) * 0.5f;
+                        Handles.color = GlobalConfigManager.ColorOf(pts[i].color); Line(pa, pm);
+                        Handles.color = GlobalConfigManager.ColorOf(pts[i + 1].color); Line(pm, pb);
                     }
                 }
                 HandleGunPaint(area); // thêm/đổi màu/xoá gun bằng chuột — trước marquee để nuốt click
@@ -2108,6 +2130,9 @@ namespace Wayfu.Lamkn
             EditorGUILayout.PropertyField(g.FindPropertyRelative("CountBullet"), new GUIContent("Số lượng đạn"));
             EditorGUILayout.PropertyField(g.FindPropertyRelative("Hidden"),
                 new GUIContent("Ẩn màu (hidden)", "Che màu (material hidden) cho tới khi gun ra VỊ TRÍ ĐẦU của slot."));
+            EditorGUILayout.PropertyField(g.FindPropertyRelative("ConnectGroup"),
+                new GUIContent("Connect nhóm", "0 = không connect. Gun CÙNG số này (ở slot khác) nối với nhau: chỉ "
+                    + "deploy khi cả nhóm ở index 0, và cùng vào path 1 lượt (cần đủ chỗ)."));
             EditorGUILayout.HelpBox("Ấn DELETE (chuột ở khung giữa) hoặc CLICK PHẢI vào gun để xoá.", MessageType.None);
             if (GUILayout.Button("Xoá gun này"))
             {
