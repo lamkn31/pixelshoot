@@ -71,7 +71,7 @@ namespace Wayfu.Lamkn
         private int _genStack = 3;
         // Màu gun mặc định khi sinh gun vào slot (chọn số slot / "+ Gun mọi slot").
         private TypeColor _slotGenColor = TypeColor.Red;
-        private BlockGridShape _genShape = BlockGridShape.Spline; // loại grid khi bấm "+ Grid" (Arc đã bỏ khỏi tool)
+        private BlockGridShape _genShape = BlockGridShape.Rect; // loại grid khi bấm "+ Grid" (mặc định Rect; Arc đã bỏ)
         // Các shape tool cho phép chọn (Arc bị loại) — index 0 = Rect, 1 = Spline.
         private static readonly string[] ToolShapeNames = { "Rect", "Spline" };
 
@@ -132,6 +132,14 @@ namespace Wayfu.Lamkn
         // Ghost hàng đợi của cell Spawner. qi = index trong Queue; qi == Queue.Count là ô "+" (thêm mới).
         private readonly List<(Rect rect, int grid, int flat, int qi)> _hitQueue = new List<(Rect, int, int, int)>();
 
+        // Spline grid: ẩn/hiện đường tim spline + waypoint (mặc định ẨN cho đỡ rối). Bật ở mục SPLINE.
+        private bool _showSplineLine;
+        private bool _showSplineWaypoints;
+
+        // Waypoint path đang quét chọn (để căn thẳng dọc/ngang) + vùng click của waypoint gom khi vẽ.
+        private readonly List<int> _selWaypoints = new List<int>();
+        private readonly List<(Rect rect, int index)> _hitWaypoints = new List<(Rect, int)>();
+
         private bool IsCellSelected(int gi, int flat) => _selCells.Contains((gi, flat));
 
         private void SelectGun(int si, int gi) { _selSlot = si; _selGun = gi; _selCells.Clear(); ClearQueueSel(); }
@@ -184,6 +192,7 @@ namespace Wayfu.Lamkn
         private void OnEnable()
         {
             _levelsFolder = EditorPrefs.GetString(FolderPrefKey, "Assets");
+            _genShape = BlockGridShape.Rect; // grid mới mặc định Rect (ép lại phòng khi window giữ state cũ)
             EnsurePreviewCamera();
             RefreshLevels();
         }
@@ -1021,7 +1030,7 @@ namespace Wayfu.Lamkn
             foreach (var h in _hitGuns)
                 if (h.rect.Contains(pos)) { SelectGun(h.slot, h.gun); return; }
             // click ra chỗ trống = bỏ chọn
-            if (!additive) { _selCells.Clear(); _selSlot = -1; _selGun = -1; ClearQueueSel(); }
+            if (!additive) { _selCells.Clear(); _selSlot = -1; _selGun = -1; ClearQueueSel(); _selWaypoints.Clear(); }
         }
 
         private int QueueSize(int gi, int flat)
@@ -1134,7 +1143,7 @@ namespace Wayfu.Lamkn
         // Quét: mọi cell có ô GIAO với vùng quét đều được chọn.
         private void RectSelect(Rect r, bool additive)
         {
-            if (!additive) _selCells.Clear();
+            if (!additive) { _selCells.Clear(); _selWaypoints.Clear(); }
             _selSlot = -1; _selGun = -1;
             foreach (var h in _hitCells)
             {
@@ -1142,6 +1151,14 @@ namespace Wayfu.Lamkn
                 if (ir.width <= 0f || ir.height <= 0f) continue;
                 if (!_selCells.Contains((h.grid, h.flat))) _selCells.Add((h.grid, h.flat));
             }
+            // Quét cả waypoint path (để căn thẳng dọc/ngang).
+            if (_showPath)
+                foreach (var h in _hitWaypoints)
+                {
+                    var ir = RectIntersect(h.rect, r);
+                    if (ir.width <= 0f || ir.height <= 0f) continue;
+                    if (!_selWaypoints.Contains(h.index)) _selWaypoints.Add(h.index);
+                }
         }
 
         // Vẽ khung camera bằng 4 góc viewport chiếu ray xuống y=0.
@@ -1738,15 +1755,20 @@ namespace Wayfu.Lamkn
             var rot = Quaternion.Euler(0f, g.Rotation, 0f);
             Vector3 ToW(Vector3 local) => g.Center + rot * local;
 
-            // Đường tim (chưa lệch ra hàng nào) — cho thấy grid đang bám cái gì.
-            var s = RoundedPolylinePath.BuildSamples(g.SplineWaypoints, g.SplineClosed,
-                                                     g.SplineCornerRadius, 8, g.SplineStyle);
-            if (s != null && s.Length >= 2)
+            // Đường tim spline (grid bám theo) — mặc định ẨN, bật ở mục SPLINE.
+            if (_showSplineLine)
             {
-                Handles.color = new Color(0.8f, 0.4f, 1f, 0.7f);
-                for (int i = 1; i < s.Length; i++) Line(Proj(ToW(s[i - 1])), Proj(ToW(s[i])));
+                var s = RoundedPolylinePath.BuildSamples(g.SplineWaypoints, g.SplineClosed,
+                                                         g.SplineCornerRadius, 8, g.SplineStyle);
+                if (s != null && s.Length >= 2)
+                {
+                    Handles.color = new Color(0.8f, 0.4f, 1f, 0.7f);
+                    for (int i = 1; i < s.Length; i++) Line(Proj(ToW(s[i - 1])), Proj(ToW(s[i])));
+                }
             }
 
+            // Waypoint spline (kéo chỉnh đường) — mặc định ẨN, bật ở mục SPLINE để sửa.
+            if (!_showSplineWaypoints) return;
             var e = Event.current;
             for (int i = 0; i < g.SplineWaypoints.Count; i++)
             {
@@ -1793,13 +1815,17 @@ namespace Wayfu.Lamkn
             if (wp == null) return;
             var e = Event.current;
             const float hr = 6f;
+            _hitWaypoints.Clear();
             for (int i = 0; i < wp.arraySize; i++)
             {
                 Vector2 p = V(wp.GetArrayElementAtIndex(i).vector3Value);
                 if (!area.Contains(p)) continue;
                 var hrect = new Rect(p.x - hr, p.y - hr, hr * 2, hr * 2);
-                EditorGUI.DrawRect(hrect, _dragWaypoint == i ? Color.yellow : new Color(1, 1, 1, 0.85f));
+                bool sel = _selWaypoints.Contains(i);
+                EditorGUI.DrawRect(hrect, _dragWaypoint == i ? Color.yellow
+                    : sel ? new Color(1f, 0.6f, 0.1f, 0.95f) : new Color(1, 1, 1, 0.85f));
                 EditorGUIUtility.AddCursorRect(hrect, MouseCursor.MoveArrow);
+                _hitWaypoints.Add((hrect, i)); // để marquee quét chọn
                 if (e.type == EventType.MouseDown && e.button == 0 && !e.alt && hrect.Contains(e.mousePosition)) { _dragWaypoint = i; e.Use(); }
             }
             if (_dragWaypoint >= 0 && _dragWaypoint < wp.arraySize)
@@ -1813,6 +1839,28 @@ namespace Wayfu.Lamkn
                     e.Use(); Repaint();
                 }
                 else if (e.type == EventType.MouseUp) { _dragWaypoint = -1; e.Use(); }
+            }
+        }
+
+        // Căn các waypoint ĐANG CHỌN về 1 đường thẳng: vertical = cùng X (đường DỌC), ngang = cùng Z. Dùng
+        // TRUNG BÌNH trục cần căn của các điểm đó.
+        private void AlignWaypoints(bool vertical)
+        {
+            var wp = _so.FindProperty("PathWaypoints");
+            if (wp == null) return;
+            var idx = new List<int>();
+            foreach (var i in _selWaypoints) if (i >= 0 && i < wp.arraySize) idx.Add(i);
+            if (idx.Count < 2) return;
+
+            float sum = 0f;
+            foreach (var i in idx) { var v = wp.GetArrayElementAtIndex(i).vector3Value; sum += vertical ? v.x : v.z; }
+            float avg = sum / idx.Count;
+            foreach (var i in idx)
+            {
+                var p = wp.GetArrayElementAtIndex(i);
+                var v = p.vector3Value;
+                if (vertical) v.x = avg; else v.z = avg;
+                p.vector3Value = v;
             }
         }
 
@@ -1996,11 +2044,11 @@ namespace Wayfu.Lamkn
 
             // Băng phủ cả VÙNG đang chọn (cùng ngưỡng → tan cùng lúc).
             EditorGUILayout.BeginHorizontal();
-            _multiIced = EditorGUILayout.Toggle("Băng phủ", _multiIced);
+            _multiIced = EditorGUILayout.Toggle("Meta Ice", _multiIced);
             if (GUILayout.Button("Áp dụng", GUILayout.Width(70))) ApplyToSelected("Iced", _multiIced ? 1 : 0);
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.BeginHorizontal();
-            _multiIceThreshold = Mathf.Max(0, EditorGUILayout.IntField("Tan khi phá ≥", _multiIceThreshold));
+            _multiIceThreshold = Mathf.Max(0, EditorGUILayout.IntField("Block Meta Ice ≥", _multiIceThreshold));
             if (GUILayout.Button("Áp dụng", GUILayout.Width(70))) ApplyToSelected("IceThreshold", _multiIceThreshold);
             EditorGUILayout.EndHorizontal();
 
@@ -2349,6 +2397,19 @@ namespace Wayfu.Lamkn
                 "dọn chỗ path chạy qua grid.")))
                 DeleteCellsOverlappingPath();
 
+            // Quét chọn waypoint trong khung giữa (ô CAM) rồi CĂN thẳng dọc/ngang cho các điểm đó.
+            if (_selWaypoints.Count >= 2)
+            {
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField($"Đã chọn {_selWaypoints.Count} waypoint — căn:", GUILayout.Width(180));
+                if (GUILayout.Button(new GUIContent("Dọc |", "Cùng X → xếp thành đường DỌC (thẳng đứng).")))
+                    AlignWaypoints(true);
+                if (GUILayout.Button(new GUIContent("Ngang —", "Cùng Z → xếp thành đường NGANG.")))
+                    AlignWaypoints(false);
+                if (GUILayout.Button("✕", BtnW)) _selWaypoints.Clear();
+                EditorGUILayout.EndHorizontal();
+            }
+
             var wp = _so.FindProperty("PathWaypoints");
             _foldWaypoints = EditorGUILayout.Foldout(_foldWaypoints, $"Waypoints — {wp.arraySize}", true);
             if (_foldWaypoints)
@@ -2665,29 +2726,38 @@ namespace Wayfu.Lamkn
                 EditorGUILayout.PropertyField(grid.FindPropertyRelative("SplineCornerRadius"),
                     new GUIContent("Corner Radius"));
 
-            var wp = grid.FindPropertyRelative("SplineWaypoints");
-            EditorGUILayout.LabelField($"Waypoints — {wp.arraySize}", EditorStyles.miniLabel);
-            EditorGUILayout.HelpBox("Kéo ô VUÔNG TÍM trong khung giữa để chỉnh đường. Cần ít nhất 2 waypoint "
-                + "thì grid mới hiện.", MessageType.None);
+            // Mũi tên (foldout) ẩn/hiện — mặc định ẨN. Mở "Đường spline" = vẽ đường tim trong khung giữa;
+            // mở "Waypoints" = hiện danh sách waypoint ở đây + ô vuông tím kéo chỉnh trong khung giữa.
+            _showSplineLine = EditorGUILayout.Foldout(_showSplineLine, "Đường spline (đường grid bám theo)", true);
+            if (_showSplineLine)
+                EditorGUILayout.HelpBox("Đang HIỆN đường tim spline (tím) trong khung giữa. Bấm mũi tên để ẩn.",
+                    MessageType.None);
 
-            int pend = -1; ListOp op = ListOp.None;
-            for (int i = 0; i < wp.arraySize; i++)
+            var wp = grid.FindPropertyRelative("SplineWaypoints");
+            _showSplineWaypoints = EditorGUILayout.Foldout(_showSplineWaypoints, $"Waypoints — {wp.arraySize}", true);
+            if (_showSplineWaypoints)
             {
-                EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.PropertyField(wp.GetArrayElementAtIndex(i), new GUIContent("WP " + i));
-                var o = MiniButtons(i, wp.arraySize);
-                if (o != ListOp.None) { pend = i; op = o; }
-                EditorGUILayout.EndHorizontal();
+                EditorGUILayout.HelpBox("Kéo ô VUÔNG TÍM trong khung giữa để chỉnh đường. Cần ít nhất 2 waypoint "
+                    + "thì grid mới hiện.", MessageType.None);
+                int pend = -1; ListOp op = ListOp.None;
+                for (int i = 0; i < wp.arraySize; i++)
+                {
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.PropertyField(wp.GetArrayElementAtIndex(i), new GUIContent("WP " + i));
+                    var o = MiniButtons(i, wp.arraySize);
+                    if (o != ListOp.None) { pend = i; op = o; }
+                    EditorGUILayout.EndHorizontal();
+                }
+                if (GUILayout.Button("+ Waypoint"))
+                {
+                    int idx = AddArray(wp);
+                    // Nối tiếp waypoint trước cho khỏi đè lên nhau; rỗng thì bắt đầu tại gốc local.
+                    wp.GetArrayElementAtIndex(idx).vector3Value = idx > 0
+                        ? wp.GetArrayElementAtIndex(idx - 1).vector3Value + Vector3.right * 2f
+                        : Vector3.zero;
+                }
+                if (pend >= 0) ApplyOp(wp, pend, op);
             }
-            if (GUILayout.Button("+ Waypoint"))
-            {
-                int idx = AddArray(wp);
-                // Nối tiếp waypoint trước cho khỏi đè lên nhau; rỗng thì bắt đầu tại gốc local.
-                wp.GetArrayElementAtIndex(idx).vector3Value = idx > 0
-                    ? wp.GetArrayElementAtIndex(idx - 1).vector3Value + Vector3.right * 2f
-                    : Vector3.zero;
-            }
-            if (pend >= 0) ApplyOp(wp, pend, op);
             EditorGUILayout.EndVertical();
         }
 
