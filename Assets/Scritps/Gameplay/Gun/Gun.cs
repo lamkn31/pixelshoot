@@ -40,6 +40,9 @@ namespace Wayfu.Lamkn
         /// <summary>Arc-length hiện tại trên path — PathManager đọc để giữ khoảng cách giữa các gun.</summary>
         public float PathDistance => _follower != null ? _follower.CurrentDistance : 0f;
         public bool IsOnPath => _state == GunState.OnPath;
+        public bool IsDead => _state == GunState.Dead;
+        /// <summary>Số VÒNG đã chạy trên path (mốc để biết gun vừa lap qua điểm path0). 0 khi ở slot.</summary>
+        public int LapCount => _follower != null ? _follower.LapCount : 0;
 
         private GunState _state = GunState.InSlot;
         private GunFireConfig _fire = GunFireConfig.FromSettings(null);

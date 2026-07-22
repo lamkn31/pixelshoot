@@ -13,17 +13,15 @@ namespace Wayfu.Lamkn
     {
         [Tooltip("Các slot đặt sẵn trên scene (Slot0..4). Bỏ trống sẽ tự tìm GunSlot trong scene.")]
         [SerializeField] private List<GunSlot> sceneSlots = new List<GunSlot>();
-        [Tooltip("Prefab LineRenderer nối các gun CONNECT trong slot (màu 2 đầu theo từng gun). Bỏ trống = không vẽ.")]
-        [SerializeField] private LineRenderer connectLinePrefab;
-        [Tooltip("Nâng đường connect lên trên gun theo Y cho dễ thấy.")]
-        [SerializeField] private float connectLineHeight = 0.5f;
+        [Tooltip("Prefab ConnectLine nối các gun CONNECT trong slot (cung Bezier, màu 2 đầu theo gun). Bỏ trống = không vẽ.")]
+        [SerializeField] private ConnectLine connectLinePrefab;
 
         private readonly List<GunSlot> _activeSlots = new List<GunSlot>();
         private readonly List<GameObject> _fallbackCreated = new List<GameObject>();
 
-        // 1 nhóm gun connect (cùng ConnectGroup id, ở các slot khác nhau) + 1 đường nối (LineRenderer) đi qua
-        // các gun; màu chia theo từng gun bằng gradient Fixed (mỗi gun 1 khối màu).
-        private class ConnectGroup { public List<Gun> Members = new List<Gun>(); public LineRenderer Line; }
+        // 1 nhóm gun connect (cùng ConnectGroup id, ở các slot khác nhau). Mỗi CẶP gun kề = 1 ConnectLine
+        // (2 gun → 1 line; 3 gun → 2 line nối chuỗi).
+        private class ConnectGroup { public List<Gun> Members = new List<Gun>(); public List<ConnectLine> Lines = new List<ConnectLine>(); }
         private readonly List<ConnectGroup> _connectGroups = new List<ConnectGroup>();
 
         public void Build(LevelData level)
@@ -105,7 +103,8 @@ namespace Wayfu.Lamkn
             _activeSlots.Clear();
             foreach (var go in _fallbackCreated) if (go != null) Destroy(go);
             _fallbackCreated.Clear();
-            foreach (var grp in _connectGroups) if (grp.Line != null) Destroy(grp.Line.gameObject);
+            foreach (var grp in _connectGroups)
+                foreach (var line in grp.Lines) if (line != null) Destroy(line.gameObject);
             _connectGroups.Clear();
         }
 
@@ -126,43 +125,42 @@ namespace Wayfu.Lamkn
             }
             foreach (var grp in _connectGroups)
                 if (grp.Members.Count >= 2 && connectLinePrefab != null)
-                {
-                    grp.Line = Instantiate(connectLinePrefab, transform);
-                    grp.Line.useWorldSpace = true;
-                    grp.Line.positionCount = grp.Members.Count;
-                }
+                    for (int i = 0; i + 1 < grp.Members.Count; i++) // mỗi cặp gun kề = 1 line
+                    {
+                        var line = Instantiate(connectLinePrefab, transform);
+                        line.SetTargets(grp.Members[i].transform, grp.Members[i + 1].transform);
+                        line.SetColors(GlobalConfigManager.ColorOf(grp.Members[i].Color),
+                                       GlobalConfigManager.ColorOf(grp.Members[i + 1].Color));
+                        grp.Lines.Add(line);
+                    }
         }
 
         private void Update() => UpdateConnectLines();
 
-        // 1 đường nối đi qua các gun connect ở VỊ TRÍ hiện tại; màu chia khối theo từng gun (gradient Fixed).
-        // Chỉ hiện khi CÒN ĐỦ mọi member trong slot; deploy đi rồi thì ẩn.
+        // Đường connect tự bám target (ConnectLine.Update); ở đây BẬT/TẮT từng đoạn line[i] (nối member i↔i+1):
+        // - Cả 2 trong slot HOẶC cả 2 trên path CÙNG VÒNG → nối.
+        // - 1 gun vừa lap qua path0 mà gun kia CHƯA (khác LapCount) → tắt đoạn đó (dây sẽ vắt hết vòng path),
+        //   tới khi gun kia cũng lap về path0 (cùng vòng) thì nối tiếp.
         private void UpdateConnectLines()
         {
             foreach (var grp in _connectGroups)
-            {
-                if (grp.Line == null) continue;
-                bool allInSlot = true;
-                foreach (var g in grp.Members) if (g == null || g.Slot == null) { allInSlot = false; break; }
-                grp.Line.enabled = allInSlot;
-                if (!allInSlot) continue;
-
-                for (int i = 0; i < grp.Members.Count; i++)
-                    grp.Line.SetPosition(i, grp.Members[i].transform.position + Vector3.up * connectLineHeight);
-                ApplyGradient(grp.Line, grp.Members);
-            }
+                for (int i = 0; i < grp.Lines.Count; i++)
+                {
+                    var line = grp.Lines[i];
+                    if (line == null) continue;
+                    bool vis = ConnectVisible(grp.Members[i], grp.Members[i + 1]);
+                    if (line.gameObject.activeSelf != vis) line.gameObject.SetActive(vis);
+                }
         }
 
-        // Màu chia KHỐI theo từng gun (không blend): GradientMode.Fixed, key gun i tại (i+1)/n → khối i phủ đoạn [i/n,(i+1)/n].
-        private static void ApplyGradient(LineRenderer lr, List<Gun> members)
+        private static bool ConnectVisible(Gun a, Gun b)
         {
-            int kn = Mathf.Clamp(members.Count, 2, 8);
-            var keys = new GradientColorKey[kn];
-            for (int i = 0; i < kn; i++)
-                keys[i] = new GradientColorKey(GlobalConfigManager.ColorOf(members[i].Color), (i + 1f) / kn);
-            var grad = new Gradient { mode = GradientMode.Fixed };
-            grad.SetKeys(keys, new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 1f) });
-            lr.colorGradient = grad;
+            if (a == null || b == null || a.IsDead || b.IsDead) return false;
+            bool aSlot = a.Slot != null, bSlot = b.Slot != null;
+            if (aSlot && bSlot) return true;                        // cả 2 còn trong slot → nối
+            if (!aSlot && !bSlot && a.IsOnPath && b.IsOnPath)
+                return a.LapCount == b.LapCount;                    // cả 2 trên path → nối khi CÙNG vòng
+            return false;                                           // đang deploy dở (queued) → tạm tắt
         }
 
         public void OnGunClicked(Gun gun)
@@ -191,6 +189,8 @@ namespace Wayfu.Lamkn
 
             foreach (var m in grp.Members) if (m != null && m.HasBullets) return; // còn member chưa hết đạn → chờ
             foreach (var m in grp.Members) if (m != null) m.Kill();               // cả nhóm hết đạn → hủy đồng loạt
+            foreach (var line in grp.Lines) if (line != null) Destroy(line.gameObject); // dọn dây (khỏi bám gun tái dùng)
+            grp.Lines.Clear();
         }
 
         // Deploy CẢ NHÓM connect: mọi member phải đang ở index 0 (front) slot; path phải đủ chỗ cho cả nhóm.
