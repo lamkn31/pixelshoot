@@ -442,9 +442,11 @@ namespace Wayfu.Lamkn
                 var row = gr.Rows[src.Row];
                 if (src.Col >= row.Length || row[src.Col] == null) continue;
 
-                float ang = gr.Data.CellAngleFromShape
+                // SpawnerLine: hướng do NGƯỜI DÙNG đặt (src.DirAngle) kể cả trên Rect/Spline auto-hướng — mũi
+                // tên phải theo đúng hướng nhả. Còn lại: Rect/Spline auto theo grid, Arc dùng góc riêng.
+                float ang = (gr.Data.CellAngleFromShape && !src.Line)
                     ? gr.Data.DefaultCellAngle(src.Row, src.Col) : src.DirAngle;
-                row[src.Col].ShowSpawnerIndicator(true, ang);
+                row[src.Col].ShowSpawnerIndicator(true, ang, src.EightWay);
                 any = true;
             }
 

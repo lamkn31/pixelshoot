@@ -111,6 +111,7 @@ namespace Wayfu.Lamkn
         private bool _multiShootable = true;
         private bool _multiIced;
         private int _multiIceThreshold = 10;
+        private float _multiLineDir; // hướng chung đặt cho SpawnerLine đang chọn (độ quanh Y)
         // Thao tác HÀNG LOẠT cho queue của spawner: thêm N mục, đặt màu/stack cả queue.
         private int _queueAddCount = 3;
         private TypeColor _queueBulkColor = TypeColor.Red;
@@ -778,45 +779,6 @@ namespace Wayfu.Lamkn
                                 if (grid.Collapse2D && e > 0) MoveArrow(wp, grid.CellPos(r, e - 1));
                             }
 
-                            // Hướng (rotate) của cell: mũi tên; kéo đầu mũi tên để xoay.
-                            // Spawner: mũi tên CAM + dài hơn = hướng nhả cell ra, phân biệt ngay với cell thường.
-                            // Rect/Spline: hướng do hình dạng grid quyết định → vẽ theo hướng TÍNH TỪ GRID
-                            // (không đọc data) để xoay grid / uốn đường là mũi tên theo ngay, khỏi phải
-                            // Generate Cells lại; và không cho kéo xoay từng cell. Arc thì đọc data.
-                            if (_showDir)
-                            {
-                                // SpawnerLine: hướng nhả do NGƯỜI DÙNG đặt (kéo xoay), kể cả trên Rect/Spline
-                                // vốn auto-hướng — vì nó cần chỉ dọc/ngang tuỳ ý.
-                                bool autoDir = grid.CellAngleFromShape && cell.Type != BlockCellType.SpawnerLine;
-                                float baseAng = autoDir ? grid.DefaultCellAngle(r, e)
-                                                        : cell.SpawnerDirectionAngleZ;
-                                if (cell.Type == BlockCellType.Spawner8)
-                                {
-                                    // Spawner8: 8 mũi tên ngắn toả đều (4 dọc/ngang + 4 chéo) — nhả ra
-                                    // mọi ô trống xung quanh nên không có "1 hướng" để kéo xoay.
-                                    Handles.color = SpawnerCol;
-                                    for (int k = 0; k < 8; k++)
-                                    {
-                                        Vector3 v8 = Quaternion.Euler(0f, baseAng + k * 45f, 0f) * Vector3.forward;
-                                        Vector3 tip8 = wp + v8 * 0.6f;
-                                        if (!Front(tip8)) continue;
-                                        Vector2 t8 = Proj(tip8);
-                                        Line(bp, t8); ArrowHead(bp, t8);
-                                    }
-                                }
-                                else
-                                {
-                                    Vector3 dirV = Quaternion.Euler(0f, baseAng, 0f) * Vector3.forward;
-                                    Vector3 tipW = wp + dirV * (isSpawner ? 0.95f : 0.55f);
-                                    if (Front(tipW))
-                                    {
-                                        Vector2 tip = Proj(tipW);
-                                        Handles.color = isSpawner ? SpawnerCol : new Color(1f, 1f, 1f, 0.9f);
-                                        Line(bp, tip); ArrowHead(bp, tip);
-                                        if (!autoDir) CellRotateHandle(gi, grid.CellIndex(r, e), wp, tip, area);
-                                    }
-                                }
-                            }
                         }
                     }
 
@@ -836,6 +798,52 @@ namespace Wayfu.Lamkn
                                 if (!Front(wp)) continue;
                                 DrawQueueGhosts(gi, grid, r, e, count, wp, grid.CellIndex(r, e), cell, area,
                                                 Proj, Front, PixSize);
+                            }
+                        }
+
+                    // Mũi tên HƯỚNG + handle xoay vẽ SAU CÙNG (sau cả cell lẫn ghost hàng đợi): vẽ xen trong
+                    // vòng cell thì cell/ghost hàng sau ĐÈ lên, handle xoay của SpawnerLine bị che, khó bấm.
+                    if (_showDir)
+                        for (int r = 0; r < grid.Rows; r++)
+                        {
+                            int count = grid.ElementsInRow(r);
+                            for (int e = 0; e < count; e++)
+                            {
+                                var cell = grid.GetCell(r, e);
+                                if (cell == null || cell.BlockStackCt <= 0) continue;
+                                Vector3 wp = grid.CellPos(r, e);
+                                if (!Front(wp)) continue;
+                                Vector2 bp = Proj(wp);
+                                bool isSpawner = cell.Type.IsSpawner();
+                                // SpawnerLine: hướng nhả do NGƯỜI DÙNG đặt (kéo xoay), kể cả trên Rect/Spline
+                                // vốn auto-hướng. Còn lại: Rect/Spline auto theo grid, Arc đọc data.
+                                bool autoDir = grid.CellAngleFromShape && cell.Type != BlockCellType.SpawnerLine;
+                                float baseAng = autoDir ? grid.DefaultCellAngle(r, e) : cell.SpawnerDirectionAngleZ;
+                                if (cell.Type == BlockCellType.Spawner8)
+                                {
+                                    // Spawner8: 8 mũi tên ngắn toả đều — nhả ra mọi ô trống, không có 1 hướng để kéo.
+                                    Handles.color = SpawnerCol;
+                                    for (int k = 0; k < 8; k++)
+                                    {
+                                        Vector3 v8 = Quaternion.Euler(0f, baseAng + k * 45f, 0f) * Vector3.forward;
+                                        Vector3 tip8 = wp + v8 * 0.6f;
+                                        if (!Front(tip8)) continue;
+                                        Vector2 t8 = Proj(tip8);
+                                        Line(bp, t8); ArrowHead(bp, t8);
+                                    }
+                                }
+                                else
+                                {
+                                    Vector3 dirV = Quaternion.Euler(0f, baseAng, 0f) * Vector3.forward;
+                                    Vector3 tipW = wp + dirV * (isSpawner ? 0.95f : 0.55f);
+                                    if (Front(tipW))
+                                    {
+                                        Vector2 tip = Proj(tipW);
+                                        Handles.color = isSpawner ? SpawnerCol : new Color(1f, 1f, 1f, 0.9f);
+                                        Line(bp, tip); ArrowHead(bp, tip);
+                                        if (!autoDir && editable) CellRotateHandle(gi, grid.CellIndex(r, e), wp, tip, area);
+                                    }
+                                }
                             }
                         }
 
@@ -1974,6 +1982,21 @@ namespace Wayfu.Lamkn
             if (GUILayout.Button("Áp dụng", GUILayout.Width(70))) ApplyToSelected("IceThreshold", _multiIceThreshold);
             EditorGUILayout.EndHorizontal();
 
+            // HƯỚNG CHUNG cho MỌI SpawnerLine đang chọn (góc quanh Y: 0=+Z, 90=+X, 180=−Z, 270=−X). Khỏi
+            // phải kéo xoay từng ô.
+            EditorGUILayout.BeginHorizontal();
+            _multiLineDir = EditorGUILayout.FloatField("Hướng Line (°)", _multiLineDir);
+            if (GUILayout.Button("Áp dụng", GUILayout.Width(70))) ApplyLineDirection(_multiLineDir);
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("Nhanh", GUILayout.Width(72));
+            if (GUILayout.Button("↑ 0°", EditorStyles.miniButton)) { _multiLineDir = 0f; ApplyLineDirection(0f); }
+            if (GUILayout.Button("→ 90°", EditorStyles.miniButton)) { _multiLineDir = 90f; ApplyLineDirection(90f); }
+            if (GUILayout.Button("↓ 180°", EditorStyles.miniButton)) { _multiLineDir = 180f; ApplyLineDirection(180f); }
+            if (GUILayout.Button("← 270°", EditorStyles.miniButton)) { _multiLineDir = 270f; ApplyLineDirection(270f); }
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.HelpBox("Hướng Line chỉ áp cho ô SpawnerLine đang chọn (đặt chung 1 hướng nhả).", MessageType.None);
+
             // Thêm N mục queue vào MỌI ô đang chọn LÀ SPAWNER (màu = màu ô đó, stack = Hole Capacity).
             EditorGUILayout.BeginHorizontal();
             _multiQueueCount = Mathf.Clamp(EditorGUILayout.IntField("Queue +", _multiQueueCount), 1, 999);
@@ -2017,6 +2040,22 @@ namespace Wayfu.Lamkn
                 var cells = grids.GetArrayElementAtIndex(gi).FindPropertyRelative("Cells");
                 if (ci < 0 || ci >= cells.arraySize) continue;
                 cells.GetArrayElementAtIndex(ci).FindPropertyRelative("Queue").arraySize = 0;
+            }
+        }
+
+        // Đặt HƯỚNG nhả (SpawnerDirectionAngleZ) chung cho MỌI ô đang chọn LÀ SpawnerLine.
+        private void ApplyLineDirection(float angle)
+        {
+            angle = Mathf.Repeat(angle, 360f);
+            var grids = _so.FindProperty("Grids");
+            foreach (var (gi, ci) in _selCells)
+            {
+                if (gi < 0 || gi >= grids.arraySize) continue;
+                var cells = grids.GetArrayElementAtIndex(gi).FindPropertyRelative("Cells");
+                if (ci < 0 || ci >= cells.arraySize) continue;
+                var cell = cells.GetArrayElementAtIndex(ci);
+                if ((BlockCellType)cell.FindPropertyRelative("Type").enumValueIndex != BlockCellType.SpawnerLine) continue;
+                cell.FindPropertyRelative("SpawnerDirectionAngleZ").floatValue = angle;
             }
         }
 
@@ -2120,6 +2159,10 @@ namespace Wayfu.Lamkn
                     new GUIContent("Reach (số ô)", cellType == BlockCellType.Spawner8
                         ? "Số ô TỐI ĐA lan ra mỗi hướng (Chebyshev) từ ô gốc (0 = tới mép grid)."
                         : "Số ô tối đa nhả ra dọc theo hướng mũi tên (0 = tới mép grid)."));
+            // SpawnerLine: nhập chính xác hướng nhả (hoặc kéo mũi tên trong khung giữa).
+            if (cellType == BlockCellType.SpawnerLine)
+                EditorGUILayout.PropertyField(c.FindPropertyRelative("SpawnerDirectionAngleZ"),
+                    new GUIContent("Hướng nhả (°)", "Góc quanh Y: 0=+Z, 90=+X, 180=−Z, 270=−X. Hoặc kéo đầu mũi tên."));
             if (cellType.IsSpawner()) DrawCellQueue(c);
             else EditorGUILayout.HelpBox("Normal: phá hết stack là cell biến mất.", MessageType.None);
             EditorGUILayout.EndVertical();

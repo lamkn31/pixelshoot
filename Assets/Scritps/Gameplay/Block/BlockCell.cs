@@ -15,6 +15,16 @@ namespace Wayfu.Lamkn
         [SerializeField] private Transform blocksContainer;
         [Tooltip("Bật khi cell đang nằm ở Ô GỐC của Spawner (child 'BlocksSpawnerIndicator').")]
         [SerializeField] private GameObject spawnerIndicator;
+        [Tooltip("SpriteRenderer của mũi tên/indicator (child 'IndicatorSprite'). Trống sẽ tự tìm trong spawnerIndicator.")]
+        [SerializeField] private SpriteRenderer indicatorRenderer;
+        [Tooltip("Sprite ARROW hướng cho Spawner/SpawnerLine (trống = dùng sprite gốc trên IndicatorSprite).")]
+        [SerializeField] private Sprite lineArrowSprite;
+        [Tooltip("Sprite cho Spawner8 (spawner_amb_direction).")]
+        [SerializeField] private Sprite eightDirectionSprite;
+        [Tooltip("Nâng thêm độ cao của mũi tên so với ĐỈNH block trên cùng của cell.")]
+        [SerializeField] private float indicatorHeightOffset = 0.3f;
+
+        private Sprite _defaultIndicatorSprite;
 
         public TypeColor Color { get; private set; }
         public int BlockCol { get; private set; }
@@ -81,6 +91,9 @@ namespace Wayfu.Lamkn
             // Nhớ pose gốc TRƯỚC khi ShowSpawnerIndicator kịp ghi đè — sau đó localRotation không còn là
             // giá trị dựng trong prefab nữa.
             if (spawnerIndicator != null) _indicatorRestLocalRot = spawnerIndicator.transform.localRotation;
+            if (indicatorRenderer == null && spawnerIndicator != null)
+                indicatorRenderer = spawnerIndicator.GetComponentInChildren<SpriteRenderer>(true);
+            if (indicatorRenderer != null) _defaultIndicatorSprite = indicatorRenderer.sprite;
         }
 
         public int StackCount => _blocks.Count;
@@ -124,14 +137,28 @@ namespace Wayfu.Lamkn
         /// <para>Đặt ở WORLD chứ không ăn theo cell: cell đứng ở ô gốc có thể là cell dồn từ hàng sau
         /// lên, mang góc riêng của nó — mũi tên phải theo hướng của NGUỒN, không phải của cell.</para>
         /// </summary>
-        public void ShowSpawnerIndicator(bool on, float dirAngle = 0f)
+        public void ShowSpawnerIndicator(bool on, float dirAngle = 0f, bool eightWay = false)
         {
-            //Debug.Log(dirAngle);
             if (spawnerIndicator == null) return;
             spawnerIndicator.SetActive(on);
-            if (on)
-                spawnerIndicator.transform.rotation =
-                    Quaternion.AngleAxis(dirAngle, Vector3.up) * _indicatorRestLocalRot;
+            if (!on) return;
+
+            spawnerIndicator.transform.rotation =
+                Quaternion.AngleAxis(dirAngle, Vector3.up) * _indicatorRestLocalRot;
+
+            if (indicatorRenderer != null)
+            {
+                // Spawner8 = sprite spawner_amb_direction; còn lại (Spawner/SpawnerLine) = ARROW hướng.
+                var sp = eightWay ? eightDirectionSprite
+                                  : (lineArrowSprite != null ? lineArrowSprite : _defaultIndicatorSprite);
+                if (sp != null) indicatorRenderer.sprite = sp;
+
+                // Độ cao mũi tên = ĐỈNH block trên cùng (stack theo Y) + offset chỉnh tay. Xoay quanh Y không
+                // đổi thành phần Y nên đặt local Y trực tiếp là đúng độ cao dù indicator đang xoay theo hướng.
+                float topY = _stackSpacing * Mathf.Max(0, StackCount - 1) + indicatorHeightOffset;
+                var lp = indicatorRenderer.transform.localPosition;
+                indicatorRenderer.transform.localPosition = new Vector3(lp.x, topY, lp.z);
+            }
         }
 
         // Dựng stack block cùng màu, gắn vào BlocksContainer của prefab (fallback: chính cell).
