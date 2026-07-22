@@ -49,8 +49,8 @@ namespace Wayfu.Lamkn
             // Tổng block đã phá trong màn → tan băng (cell + obstacle băng) khi đạt ngưỡng.
             int left = GridBlockManager.Instance != null ? GridBlockManager.Instance.RemainingBlocks : 0;
             int destroyed = Mathf.Max(0, _blocksAtStart - left);
-            GridBlockManager.Instance?.UpdateIce(destroyed);
-            Level?.UpdateObstacleMelt(destroyed);
+            GridBlockManager.Instance?.UpdateIce(destroyed);   // tan trạng thái băng của cell (cho bắn được)
+            IceController.Instance?.UpdateIce(destroyed);       // countdown + xoá Ice hình khi đủ ngưỡng
             if (CheckWin()) return;
             CheckLose();
         }

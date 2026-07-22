@@ -334,6 +334,7 @@ namespace Wayfu.Lamkn
             EditorGUILayout.EndHorizontal();
             if (GUILayout.Button("Create Scene Slots (0-4)")) CreateSceneSlots();
             if (GUILayout.Button("Create MapController")) CreateMapController();
+            if (GUILayout.Button("Create IceController")) CreateIceController();
 
             EditorGUILayout.Space(4);
             EditorGUILayout.LabelField($"Levels ({_levels.Count})", EditorStyles.boldLabel);
@@ -2083,10 +2084,12 @@ namespace Wayfu.Lamkn
         {
             var iced = c.FindPropertyRelative("Iced");
             EditorGUILayout.PropertyField(iced,
-                new GUIContent("Băng phủ", "Cell KHÔNG bắn được cho tới khi băng tan (phá đủ block trong màn)."));
+                new GUIContent("Băng phủ", "Cell KHÔNG bắn được cho tới khi băng tan. IceController tự sinh khối Ice "
+                    + "phủ vùng cell băng liền kề (cùng ngưỡng) khi Play."));
             if (iced.boolValue)
                 EditorGUILayout.PropertyField(c.FindPropertyRelative("IceThreshold"),
-                    new GUIContent("Tan khi phá ≥", "Tổng block phá trong màn để băng tan. Đặt = Melt-At của Obstacle băng phủ lên."));
+                    new GUIContent("Tan khi phá ≥", "Tổng block phá trong màn để băng tan (cũng là số countdown "
+                        + "ban đầu). Cell liền kề CÙNG ngưỡng gộp thành 1 khối băng."));
         }
 
         private void DrawSelectedCell(int gridIdx, int cellIdx)
@@ -2229,9 +2232,6 @@ namespace Wayfu.Lamkn
                     el.FindPropertyRelative("Scale").vector3Value = Vector3.one;
                 EditorGUILayout.PropertyField(el.FindPropertyRelative("Type"));
                 EditorGUILayout.PropertyField(el.FindPropertyRelative("Strength"));
-                EditorGUILayout.PropertyField(el.FindPropertyRelative("MeltAtDestroyed"),
-                    new GUIContent("Băng: tan khi phá ≥", "Obstacle băng tự biến mất khi TỔNG block phá trong màn ≥ số này "
-                        + "(0 = obstacle thường, không tan). Đặt bằng IceThreshold của vùng cell nó phủ."));
                 EditorGUILayout.EndVertical();
             }
             if (pend >= 0)
@@ -2908,6 +2908,20 @@ namespace Wayfu.Lamkn
             }
             Selection.activeGameObject = mc.gameObject;
             EditorGUIUtility.PingObject(mc.gameObject);
+        }
+
+        // Tạo 1 IceController rỗng trên scene để gán prefab Ice (băng tự sinh phủ vùng cell Iced).
+        private void CreateIceController()
+        {
+            var ic = FindObjectOfType<IceController>();
+            if (ic == null)
+            {
+                var go = new GameObject("IceController");
+                Undo.RegisterCreatedObjectUndo(go, "Create IceController");
+                ic = go.AddComponent<IceController>();
+            }
+            Selection.activeGameObject = ic.gameObject;
+            EditorGUIUtility.PingObject(ic.gameObject);
         }
 
         private void CreateSceneSlots()
