@@ -1,0 +1,123 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 21b4429a5846abd4b99ca05c60e3832b, type: 3}
+  m_Name: Level26
+  m_EditorClassIdentifier: 
+  CurGameDifficulty: 0
+  SkipLevelLoop: 0
+  NumberOfColors: 0
+  MechanicNames: []
+  PathWaypoints: []
+  IsClosed: 1
+  PathStyle: 0
+  CornerRadius: 1
+  SlotCount: 4
+  Slots:
+  - Guns:
+    - Color: 1
+      CountBullet: 60
+      Hidden: 0
+      ConnectGroup: 0
+    - Color: 1
+      CountBullet: 60
+      Hidden: 0
+      ConnectGroup: 0
+    - Color: 6
+      CountBullet: 60
+      Hidden: 0
+      ConnectGroup: 2
+    - Color: 13
+      CountBullet: 60
+      Hidden: 0
+      ConnectGroup: 3
+  - Guns:
+    - Color: 6
+      CountBullet: 60
+      Hidden: 0
+      ConnectGroup: 0
+    - Color: 8
+      CountBullet: 30
+      Hidden: 0
+      ConnectGroup: 2
+    - Color: 9
+      CountBullet: 30
+      Hidden: 0
+      ConnectGroup: 0
+    - Color: 9
+      CountBullet: 60
+      Hidden: 0
+      ConnectGroup: 0
+    - Color: 1
+      CountBullet: 60
+      Hidden: 0
+      ConnectGroup: 4
+    - Color: 6
+      CountBullet: 60
+      Hidden: 0
+      ConnectGroup: 3
+  - Guns:
+    - Color: 6
+      CountBullet: 60
+      Hidden: 0
+      ConnectGroup: 0
+    - Color: 9
+      CountBullet: 60
+      Hidden: 0
+      ConnectGroup: 2
+    - Color: 6
+      CountBullet: 60
+      Hidden: 0
+      ConnectGroup: 0
+    - Color: 13
+      CountBullet: 60
+      Hidden: 0
+      ConnectGroup: 1
+    - Color: 9
+      CountBullet: 60
+      Hidden: 0
+      ConnectGroup: 0
+    - Color: 8
+      CountBullet: 60
+      Hidden: 0
+      ConnectGroup: 4
+  - Guns:
+    - Color: 6
+      CountBullet: 60
+      Hidden: 0
+      ConnectGroup: 0
+    - Color: 8
+      CountBullet: 30
+      Hidden: 0
+      ConnectGroup: 0
+    - Color: 1
+      CountBullet: 60
+      Hidden: 0
+      ConnectGroup: 0
+    - Color: 13
+      CountBullet: 60
+      Hidden: 0
+      ConnectGroup: 1
+    - Color: 8
+      CountBullet: 30
+      Hidden: 0
+      ConnectGroup: 0
+  HoleCapacity: 3
+  Grids: []
+  CameraOrthoSize: 9
+  ScreenAspect: {x: 9, y: 16}
+  CameraCenter: {x: 0, y: 0, z: 0}
+  BoardProps: []
+  Obstacles: []
+  GunPrefab: {fileID: 0}
+  BlockCellPrefab: {fileID: 0}
+  BlockPrefab: {fileID: 0}
+  BulletPrefab: {fileID: 0}
